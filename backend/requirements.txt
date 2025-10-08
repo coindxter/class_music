@@ -1,0 +1,9 @@
+# dependencies
+flask_cors
+pymysql
+yt-dlp
+mysqlclient
+Flask
+Flask-SQLAlchemy
+mysqlclient
+cryptography
