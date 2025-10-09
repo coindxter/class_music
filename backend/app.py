@@ -167,15 +167,27 @@ def delete_song(song_id):
     db.session.commit()
     return jsonify({'message': 'Song deleted successfully'}), 200
 
-
-
-
-
-
-
-
-
-
+@app.route('/delete/all', methods=['DELETE'])
+def delete_all():
+    """Delete ALL data — classes, students, artists, and songs"""
+    try:
+        num_songs = Song.query.delete()
+        num_artists = Artist.query.delete()
+        num_students = Student.query.delete()
+        num_classes = ClassPeriod.query.delete()
+        db.session.commit()
+        return jsonify({
+            'message': 'All data deleted successfully!',
+            'deleted': {
+                'classes': num_classes,
+                'students': num_students,
+                'artists': num_artists,
+                'songs': num_songs
+            }
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     with app.app_context():
