@@ -1,125 +1,140 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
-import ClassList from "./components/ClassList";
-import StudentList from "./components/StudentList";
-import ArtistList from "./components/ArtistList";
-import SongList from "./components/SongList";
 import AddForm from "./components/AddForm";
-import "./style.css";
 
 const API_BASE = "http://localhost:5050";
 
-function App() {
+export default function App() {
   const [classes, setClasses] = useState([]);
-  const [selectedClass, setSelectedClass] = useState(null);
-  const [students, setStudents] = useState([]);
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [artists, setArtists] = useState([]);
-  const [selectedArtist, setSelectedArtist] = useState(null);
-  const [songs, setSongs] = useState([]);
+  const [expandedClasses, setExpandedClasses] = useState({});
+  const [expandedStudents, setExpandedStudents] = useState({});
+  const [expandedArtists, setExpandedArtists] = useState({});
+
+  const fetchClasses = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/classes_full`);
+      setClasses(res.data);
+    } catch (err) {
+      console.error("Error fetching classes:", err);
+    }
+  };
 
   useEffect(() => {
     fetchClasses();
   }, []);
 
-  const fetchClasses = async () => {
-    const res = await axios.get(`${API_BASE}/classes`);
-    setClasses(res.data);
+  const toggleClass = (classId) => {
+    setExpandedClasses((prev) => ({
+      ...prev,
+      [classId]: !prev[classId],
+    }));
   };
 
-  const fetchStudents = async (classId) => {
-    setSelectedClass(classId);
-    const res = await axios.get(`${API_BASE}/students/${classId}`);
-    setStudents(res.data);
-    setSelectedStudent(null);
-    setArtists([]);
-    setSongs([]);
+  const toggleStudent = (studentId) => {
+    setExpandedStudents((prev) => ({
+      ...prev,
+      [studentId]: !prev[studentId],
+    }));
   };
 
-  const fetchArtists = async (studentId) => {
-    setSelectedStudent(studentId);
-    const res = await axios.get(`${API_BASE}/artists/${studentId}`);
-    setArtists(res.data);
-    setSelectedArtist(null);
-    setSongs([]);
-  };
-
-  const fetchSongs = async (artistId) => {
-    setSelectedArtist(artistId);
-    const res = await axios.get(`${API_BASE}/songs/${artistId}`);
-    setSongs(res.data);
+  const toggleArtist = (artistId) => {
+    setExpandedArtists((prev) => ({
+      ...prev,
+      [artistId]: !prev[artistId],
+    }));
   };
 
   return (
-    <div className="app">
-      <h1>🎶 Class Music Manager</h1>
+    <div
+      style={{
+        color: "white",
+        backgroundColor: "#202020",
+        minHeight: "100vh",
+        width: "100vw",
+        margin: 0,
+        padding: "30px",
+        fontFamily: "Arial, sans-serif",
+        boxSizing: "border-box",
+        overflowX: "hidden",
+      }}
+    >
+      <h1 style={{ fontSize: "2.5rem", fontWeight: "bold" }}>🎵 Class Music Dashboard</h1>
 
-      <div className="columns">
-        <div>
-          <h2>Classes</h2>
-          <AddForm
-            placeholder="New Class"
-            onAdd={async (name) => {
-              await axios.post(`${API_BASE}/add_class`, { name });
-              fetchClasses();
+      {classes.map((c) => (
+        <div key={c.id} style={{ marginBottom: "20px" }}>
+          <button
+            onClick={() => toggleClass(c.id)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#91b8ff",
+              fontSize: "1.5rem",
+              cursor: "pointer",
+              fontWeight: "bold",
             }}
-          />
-          <ClassList classes={classes} onSelect={fetchStudents} />
-        </div>
+          >
+            {expandedClasses[c.id] ? "▼" : "▶"} {c.name}
+          </button>
 
-        <div>
-          <h2>Students</h2>
-          {selectedClass && (
-            <AddForm
-              placeholder="New Student"
-              onAdd={async (name) => {
-                await axios.post(`${API_BASE}/add_student`, {
-                  name,
-                  class_id: selectedClass,
-                });
-                fetchStudents(selectedClass);
-              }}
-            />
-          )}
-          <StudentList students={students} onSelect={fetchArtists} />
-        </div>
+          {expandedClasses[c.id] && (
+            <ul style={{ marginLeft: "25px", listStyleType: "none" }}>
+              {c.students.map((s) => (
+                <li key={s.id} style={{ marginBottom: "8px" }}>
+                  <button
+                    onClick={() => toggleStudent(s.id)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#8fd3ff",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                      fontSize: "1.1rem",
+                    }}
+                  >
+                    {expandedStudents[s.id] ? "▼" : "▶"} {s.name}
+                  </button>
 
-        <div>
-          <h2>Artists</h2>
-          {selectedStudent && (
-            <AddForm
-              placeholder="New Artist"
-              onAdd={async (name) => {
-                await axios.post(`${API_BASE}/add_artist`, {
-                  name,
-                  student_id: selectedStudent,
-                });
-                fetchArtists(selectedStudent);
-              }}
-            />
-          )}
-          <ArtistList artists={artists} onSelect={fetchSongs} />
-        </div>
+                  {expandedStudents[s.id] && (
+                    <ul style={{ marginLeft: "25px", listStyleType: "none" }}>
+                      {s.artists.map((a) => (
+                        <li key={a.id} style={{ marginBottom: "5px" }}>
+                          <button
+                            onClick={() => toggleArtist(a.id)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "#ffcc8f",
+                              cursor: "pointer",
+                              fontWeight: "500",
+                            }}
+                          >
+                            {expandedArtists[a.id] ? "🎤 ▼" : "🎤 ▶"} {a.name}
+                          </button>
 
-        <div>
-          <h2>Songs</h2>
-          {selectedArtist && (
-            <AddForm
-              placeholder="New Song"
-              onAdd={async (title) => {
-                await axios.post(`${API_BASE}/add_song`, {
-                  title,
-                  artist_id: selectedArtist,
-                });
-                fetchSongs(selectedArtist);
-              }}
-            />
+                          {expandedArtists[a.id] && (
+                            <ul
+                              style={{
+                                marginLeft: "25px",
+                                listStyleType: "none",
+                                color: "#d8aaff",
+                              }}
+                            >
+                              {a.songs.map((song) => (
+                                <li key={song.id}>🎵 {song.title}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
-          <SongList songs={songs} />
         </div>
-      </div>
+      ))}
+      <AddForm classes={classes} onAddComplete={fetchClasses} />
     </div>
   );
 }
-
-export default App;
