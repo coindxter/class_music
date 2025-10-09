@@ -47,201 +47,339 @@ const handleDelete = async (type, id) => {
     const response = await axios.delete(endpoint);
     console.log("✅ Server response:", response.data);
 
-    // Refresh the data after delete
     fetchClasses();
   } catch (error) {
-    console.error("❌ Delete error:", error);
+    console.error("Delete error:", error);
   }
 };
 
 
 
 
-  return (
+return (
+  <div
+    style={{
+      color: "white",
+      backgroundColor: "#202020",
+      minHeight: "100vh",
+      width: "100vw",
+      margin: 0,
+      padding: "30px",
+      fontFamily: "Arial, sans-serif",
+      boxSizing: "border-box",
+      overflowX: "hidden",
+    }}
+  >
+    {/* Title */}
+    <h1 style={{ fontSize: "2.5rem", fontWeight: "bold", marginBottom: "20px" }}>
+      🎵 Class Music Dashboard
+    </h1>
+
+    {/* Top control bar */}
     <div
       style={{
-        color: "white",
-        backgroundColor: "#202020",
-        minHeight: "100vh",
-        width: "100vw",
-        padding: "30px",
-        fontFamily: "Arial, sans-serif",
-        boxSizing: "border-box",
+        display: "flex",
+        alignItems: "center",
+        gap: "20px",
+        marginBottom: "30px",
+        flexWrap: "wrap",
       }}
     >
-      <h1 style={{ fontSize: "2.5rem", fontWeight: "bold" }}>🎵 Class Music Dashboard</h1>
-
+      {/* Delete ALL Data button */}
       <button
-          onClick={() => handleDelete("all")}       
-          style={{
+        onClick={() => {handleDelete("all");}}
+        style={{
           backgroundColor: "#ff4d4d",
           color: "white",
           border: "none",
-          padding: "10px 15px",
-          borderRadius: "6px",
+          padding: "10px 20px",
+          borderRadius: "8px",
           cursor: "pointer",
+          fontSize: "1rem",
           fontWeight: "bold",
-          marginBottom: "25px",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+          transition: "background-color 0.2s ease",
         }}
+        onMouseEnter={(e) => (e.target.style.backgroundColor = "#ff1a1a")}
+        onMouseLeave={(e) => (e.target.style.backgroundColor = "#ff4d4d")}
       >
         🧨 Delete ALL Data
       </button>
 
+      {/* AddForm stays fixed under title */}
+      <AddForm classes={classes} onAddComplete={fetchClasses} />
+    </div>
+
+    {/* Class cards grid */}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+        gap: "20px",
+        alignItems: "start",
+      }}
+    >
       {classes.map((c) => (
-        <div key={c.id} style={{ marginBottom: "20px" }}>
-          {/* CLASS HEADER */}
-          <button
-            onClick={() => toggleClass(c.id)}
+        <div
+          key={c.id}
+          onClick={() => toggleClass(c.id)}
+          style={{
+            backgroundColor: "#2b2b2b",
+            borderRadius: "10px",
+            padding: "20px",
+            width: "100%",
+            boxShadow: "0 4px 10px rgba(0,0,0,0.3)",
+            cursor: "pointer",
+            transition: "all 0.25s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "scale(1.05)";
+            e.currentTarget.style.boxShadow = "0 0 15px rgba(145,184,255,0.6)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
+            e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.3)";
+          }}
+        >
+          {/* Class title + delete */}
+          <div
             style={{
-              background: "none",
-              border: "none",
-              color: "#91b8ff",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "10px",
               fontSize: "1.5rem",
-              cursor: "pointer",
               fontWeight: "bold",
+              color: "#91b8ff",
+              marginBottom: "10px",
+              textAlign: "center",
             }}
           >
-            {expandedClasses[c.id] ? "▼" : "▶"} {c.name}
-          </button>
+            <span>{c.name}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete("class", c.id);
+              }}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#aaa",
+                cursor: "pointer",
+                fontSize: "1rem",
+                filter: "drop-shadow(0 0 2px rgba(255,255,255,0.1))",
+                transition: "color 0.2s ease, transform 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.color = "#ff6666";
+                e.target.style.transform = "scale(1.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.color = "#aaa";
+                e.target.style.transform = "scale(1)";
+              }}
+              title="Delete Class"
+            >
+              🗑
+            </button>
+          </div>
 
-          {/* Delete Class */}
-          <button
-            onClick={() => handleDelete("class", c.id)}
+          {/* Expanded students */}
+          <div
             style={{
-              marginLeft: "8px",
-              background: "transparent",
-              border: "none",
-              color: "#666",
-              cursor: "pointer",
-              fontSize: "1rem",
-              transition: "color 0.2s ease",
+              maxHeight: expandedClasses[c.id] ? "1000px" : "0",
+              overflow: "hidden",
+              transition: "max-height 0.4s ease",
             }}
-            onMouseEnter={(e) => (e.target.style.color = "#ff6666")}
-            onMouseLeave={(e) => (e.target.style.color = "#666")}
-            title="Delete class"
           >
-            🗑
-          </button>
-
-          {/* Expanded Class Content */}
-          {expandedClasses[c.id] && (
-            <ul style={{ marginLeft: "25px", listStyleType: "none" }}>
+            <ul
+              style={{
+                marginLeft: "5px",
+                listStyleType: "none",
+                padding: 0,
+                marginTop: "10px",
+              }}
+            >
               {c.students.map((s) => (
                 <li key={s.id} style={{ marginBottom: "8px" }}>
-                  <button
-                    onClick={() => toggleStudent(s.id)}
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleStudent(s.id);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#8fd3ff",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        fontSize: "1rem",
+                        flexGrow: 1,
+                        textAlign: "left",
+                      }}
+                    >
+                      {expandedStudents[s.id] ? "▼" : "▶"} {s.name}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete("student", s.id);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#aaa",
+                        cursor: "pointer",
+                        fontSize: "1rem",
+                        filter: "drop-shadow(0 0 2px rgba(255,255,255,0.1))",
+                        transition: "color 0.2s ease, transform 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.color = "#ff6666";
+                        e.target.style.transform = "scale(1.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.color = "#aaa";
+                        e.target.style.transform = "scale(1)";
+                      }}
+                      title="Delete Student"
+                    >
+                      🗑
+                    </button>
+                  </div>
+
+                  {/* Artists */}
+                  <div
                     style={{
-                      background: "none",
-                      border: "none",
-                      color: "#8fd3ff",
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                      fontSize: "1.1rem",
+                      maxHeight: expandedStudents[s.id] ? "800px" : "0",
+                      overflow: "hidden",
+                      transition: "max-height 0.3s ease",
                     }}
                   >
-                    {expandedStudents[s.id] ? "▼" : "▶"} {s.name}
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete("student", s.id)}
-                    style={{
-                      marginLeft: "8px",
-                      background: "transparent",
-                      border: "none",
-                      color: "#666",
-                      cursor: "pointer",
-                      fontSize: "1rem",
-                      transition: "color 0.2s ease",
-                    }}
-                    onMouseEnter={(e) => (e.target.style.color = "#ff6666")}
-                    onMouseLeave={(e) => (e.target.style.color = "#666")}
-                    title="Delete student"
-                  >
-                    🗑
-                  </button>
-
-                  {/* Expanded Student Content */}
-                  {expandedStudents[s.id] && (
-                    <ul style={{ marginLeft: "25px", listStyleType: "none" }}>
+                    <ul
+                      style={{
+                        marginLeft: "15px",
+                        listStyleType: "none",
+                        padding: 0,
+                      }}
+                    >
                       {s.artists.map((a) => (
                         <li key={a.id} style={{ marginBottom: "5px" }}>
-                          <button
-                            onClick={() => toggleArtist(a.id)}
+                          <div style={{ display: "flex", alignItems: "center" }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleArtist(a.id);
+                              }}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#ffcc8f",
+                                cursor: "pointer",
+                                fontWeight: "500",
+                                flexGrow: 1,
+                                textAlign: "left",
+                              }}
+                            >
+                              {expandedArtists[a.id] ? "🎤 ▼" : "🎤 ▶"} {a.name}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete("artist", a.id);
+                              }}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#aaa",
+                                cursor: "pointer",
+                                fontSize: "1rem",
+                                filter: "drop-shadow(0 0 2px rgba(255,255,255,0.1))",
+                                transition: "color 0.2s ease, transform 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.target.style.color = "#ff6666";
+                                e.target.style.transform = "scale(1.3)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.target.style.color = "#aaa";
+                                e.target.style.transform = "scale(1)";
+                              }}
+                              title="Delete Artist"
+                            >
+                              🗑
+                            </button>
+                          </div>
+
+                          {/* Songs */}
+                          <div
                             style={{
-                              background: "none",
-                              border: "none",
-                              color: "#ffcc8f",
-                              cursor: "pointer",
-                              fontWeight: "500",
+                              maxHeight: expandedArtists[a.id] ? "500px" : "0",
+                              overflow: "hidden",
+                              transition: "max-height 0.3s ease",
                             }}
                           >
-                            {expandedArtists[a.id] ? "🎤 ▼" : "🎤 ▶"} {a.name}
-                          </button>
-
-                          <button
-                            onClick={() => handleDelete("artist", a.id)}
-                            style={{
-                              marginLeft: "8px",
-                              background: "transparent",
-                              border: "none",
-                              color: "#666",
-                              cursor: "pointer",
-                              fontSize: "1rem",
-                              transition: "color 0.2s ease",
-                            }}
-                            onMouseEnter={(e) => (e.target.style.color = "#ff6666")}
-                            onMouseLeave={(e) => (e.target.style.color = "#666")}
-                            title="Delete artist"
-                          >
-                            🗑
-                          </button>
-
-                          {/* Expanded Artist Content */}
-                          {expandedArtists[a.id] && (
                             <ul
                               style={{
-                                marginLeft: "25px",
+                                marginLeft: "15px",
                                 listStyleType: "none",
                                 color: "#d8aaff",
                               }}
                             >
                               {a.songs.map((song) => (
-                                <li key={song.id}>
+                                <li
+                                  key={song.id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                  }}
+                                >
                                   🎵 {song.title}
                                   <button
-                                    onClick={() => handleDelete("song", song.id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete("song", song.id);
+                                    }}
                                     style={{
-                                      marginLeft: "8px",
-                                      background: "transparent",
+                                      background: "none",
                                       border: "none",
-                                      color: "#666",
+                                      color: "#aaa",
                                       cursor: "pointer",
                                       fontSize: "1rem",
-                                      transition: "color 0.2s ease",
+                                      filter:
+                                        "drop-shadow(0 0 2px rgba(255,255,255,0.1))",
+                                      transition:
+                                        "color 0.2s ease, transform 0.15s ease",
                                     }}
-                                    onMouseEnter={(e) => (e.target.style.color = "#ff6666")}
-                                    onMouseLeave={(e) => (e.target.style.color = "#666")}
-                                    title="Delete song"
+                                    onMouseEnter={(e) => {
+                                      e.target.style.color = "#ff6666";
+                                      e.target.style.transform = "scale(1.3)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.target.style.color = "#aaa";
+                                      e.target.style.transform = "scale(1)";
+                                    }}
+                                    title="Delete Song"
                                   >
                                     🗑
                                   </button>
                                 </li>
                               ))}
                             </ul>
-                          )}
+                          </div>
                         </li>
                       ))}
                     </ul>
-                  )}
+                  </div>
                 </li>
               ))}
             </ul>
-          )}
+          </div>
         </div>
       ))}
-
-      <AddForm classes={classes} onAddComplete={fetchClasses} />
     </div>
-  );
+  </div>
+);
+
 }
