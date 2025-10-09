@@ -1,137 +1,101 @@
-🎵 Class Music Dashboard
-------------------------
+🎵 **Class Music Dashboard**
 
-A full-stack web app for managing class playlists — students, artists, and songs — with automatic YouTube song fetching and downloading support.
+A full-stack app to manage class music — add classes, students, artists, and automatically fetch top 5 YouTube songs per artist.
 
-### 📁 Project Structure
+---
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   class_music/  │  ├── backend/  │   ├── app.py  │   ├── classdj.db  │   ├── requirements.txt  │   └── start.sh  │  ├── frontend/  │   ├── package.json  │   ├── vite.config.js  │   ├── src/  │   │   ├── App.jsx  │   │   ├── main.jsx  │   │   └── components/  │   │       └── AddForm.jsx  │   └── dist/  ← built React app  │  └── README.md   `
+### 🧰 Requirements
 
-🚀 Features
------------
+* Python 3.9+
+* Node.js 18+
+* npm 8+
+* ffmpeg (installed globally)
 
-*   🏫 Manage **Classes → Students → Artists → Songs** hierarchy
-    
-*   🎶 Automatically fetch **top 5 YouTube songs** per artist
-    
-*   💾 Store data locally in SQLite (classdj.db)
-    
-*   🧨 Safe delete confirmation for all delete actions
-    
-*   ⚙️ Modern **Flask + React (Vite)** stack
-    
-*   🎧 Uses **yt-dlp** and **ffmpeg** for audio handling
-    
+---
 
-🧰 Requirements
----------------
+### ⚙️ Backend Setup (Flask)
 
-DependencyVersion (tested)Python3.9 – 3.12Node.js18 +npm8 +ffmpeginstalled globallySQLiteincluded with Python
+1. Go to the backend folder
 
-⚙️ Backend Setup (Flask)
-------------------------
+   ```
+   cd backend
+   ```
 
-1.  cd backend
-    
-2.  python -m venv venvsource venv/bin/activate # macOS/Linuxvenv\\Scripts\\activate # Windows
-    
-3.  pip install -r requirements.txtIf you don’t have a requirements.txt, generate one:pip install flask flask-cors flask-sqlalchemy yt-dlp youtube-search-pythonpip freeze > requirements.txt
-    
-4.  **Install ffmpeg**
-    
-    *   macOS: brew install ffmpeg
-        
-    *   Ubuntu: sudo apt install ffmpeg
-        
-    *   Windows: download from [https://ffmpeg.org](https://ffmpeg.org) and add to PATH
-        
-5.  python app.pyFlask will start at → [**http://localhost:5050**](http://localhost:5050)
-    
+2. Create and activate a virtual environment
 
-💻 Frontend Setup (React + Vite)
---------------------------------
+   ```
+   python -m venv venv
+   source venv/bin/activate       # macOS/Linux
+   venv\Scripts\activate          # Windows
+   ```
 
-1.  cd frontend
-    
-2.  npm install
-    
-3.  npm run devOpen → [**http://localhost:5173**](http://localhost:5173)
-    
-4.  npm run buildThis creates a dist/ folder with static assets that Flask can serve.
-    
+3. Install dependencies
 
-🌐 Connecting Frontend + Backend
---------------------------------
+   ```
+   pip install -r requirements.txt
+   ```
 
-Your Flask app in backend/app.py already serves the built React app with:
+   If you don’t have a requirements file yet:
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")   `
+   ```
+   pip install flask flask-cors flask-sqlalchemy yt-dlp youtube-search-python
+   pip freeze > requirements.txt
+   ```
 
-When you run npm run build, those files go into frontend/dist, and Flask will automatically serve them at [**http://localhost:5050**](http://localhost:5050).
+4. Make sure ffmpeg is installed
 
-🧩 Deployment Options
----------------------
+   * macOS: `brew install ffmpeg`
+   * Ubuntu: `sudo apt install ffmpeg`
+   * Windows: download from [https://ffmpeg.org](https://ffmpeg.org) and add to PATH
 
-### 🪶 Option 1: Deploy with Gunicorn + Nginx (Recommended)
+5. Run the backend
 
-1.  cd frontend && npm run build
-    
-2.  cd backendgunicorn -w 4 app:app
-    
-3.  Point Nginx to serve static files from frontend/dist/and proxy API calls (/add\_\*, /delete/\*, /fetch\_top\_songs\_all) to Flask.
-    
+   ```
+   python app.py
+   ```
 
-### ☁️ Option 2: Render / Railway / Fly.io
+   The backend runs at: **[http://localhost:5050](http://localhost:5050)**
 
-These services can auto-detect Python + Node projects.
+---
 
-**Procfile:**
+### 💻 Frontend Setup (React + Vite)
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   web: gunicorn app:app   `
+1. Go to the frontend folder
 
-**Build Commands:**
+   ```
+   cd frontend
+   ```
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt   `
+2. Install dependencies
 
-🧾 API Endpoints
-----------------
+   ```
+   npm install
+   ```
 
-MethodEndpointDescriptionGET/classes\_fullGet all classes, students, artists, songsPOST/add\_classAdd new classPOST/add\_studentAdd new studentPOST/add\_artistAdd artist to studentPOST/add\_songAdd song to artistDELETE/delete/allDelete everythingGET/fetch\_top\_songs\_allFetch top 5 YouTube songs for each artist
+3. Start the development server
 
-🧠 Notes
---------
+   ```
+   npm run dev
+   ```
 
-*   Each artist fetches top 5 verified songs using YouTube metadata filtering.
-    
-*   Songs are stored in SQLite (classdj.db).
-    
-*   Downloads are optional — the app stores URLs and titles instead of large audio files.
-    
-*   Make sure ffmpeg is installed if you later enable audio downloads.
-    
+   Then open **[http://localhost:5173](http://localhost:5173)** in your browser.
 
-🧑‍💻 Development Tips
-----------------------
+---
 
-*   Always start backend **before** frontend.
-    
-*   Use console.log and Flask logs for debugging API calls.
-    
-*   const API\_BASE = "http://localhost:5050";in your App.jsx.
-    
+### 🌐 Run Both Together
 
-🏁 Example Workflow
--------------------
+* Start the backend first:
 
-1.  Create a class
-    
-2.  Add a student
-    
-3.  Add an artist (e.g., “NF”)
-    
-4.  Click **🎶 Fetch Top Songs**
-    
-5.  View songs auto-populated for each artist
-    
+  ```
+  cd backend
+  python app.py
+  ```
 
-Would you like me to include a **requirements.txt and package.json snippet** too (so you can deploy it cleanly to Render or Railway)?
+* Then, in another terminal, start the frontend:
+
+  ```
+  cd frontend
+  npm run dev
+  ```
+
+Now visit **[http://localhost:5173](http://localhost:5173)** to use the app.
