@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import AddForm from "./components/AddForm";
+import MusicPlayer from "./components/MusicPlayer";
 
 const API_BASE = "http://localhost:5050";
 
@@ -154,6 +155,10 @@ export default function App() {
   <AddForm classes={classes} onAddComplete={fetchClasses} />
 </div>
 
+      {/* 🪄 Drop the music player here */}
+      <div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
+        <MusicPlayer />
+      </div>
 
       {/* Fetch message feedback */}
       {fetchMessage && (
