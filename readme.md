@@ -1,14 +1,19 @@
-git clone https://github.com/coindxter/class_music.git \n
-cd class_music/backend \n
-python -m venv .venv \n
-.venv\Scripts\activate \n
-pip install -r requirements.txt \n
+# Clone the repository
+git clone https://github.com/coindxter/class_music.git
+cd class_music/backend
 
-cd ../frontend \n
-npm install \n
-npm run build \n
+# Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate
 
-cd ../backend \n
-python app.py \n
+# Install backend dependencies
+pip install -r requirements.txt
 
-http://localhost:5050
+# Build the frontend
+cd ../frontend
+npm install
+npm run build
+
+# Return to backend and run Flask
+cd ../backend
+python app.py
