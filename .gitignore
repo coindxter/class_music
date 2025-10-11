@@ -1,2 +1,11 @@
+# Python
 __pycache__/
-node_modules/
+*.pyc
+*.pyo
+*.pyd
+*.db
+.env
+.venv/
+venv/
+ENV/
+env/
