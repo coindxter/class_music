@@ -35,13 +35,6 @@ A full-stack app to manage class music — add classes, students, artists, and a
    pip install -r requirements.txt
    ```
 
-   If you don’t have a requirements file yet:
-
-   ```
-   pip install flask flask-cors flask-sqlalchemy yt-dlp youtube-search-python
-   pip freeze > requirements.txt
-   ```
-
 4. Make sure ffmpeg is installed
 
    * macOS: `brew install ffmpeg`

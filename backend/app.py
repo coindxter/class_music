@@ -205,14 +205,14 @@ def fetch_top_songs_all():
 
         for artist in artists:
             artist_name = artist.name
-            print(f"\n🔍 Searching top songs for: {artist_name}")
+            print(f"\nSearching top songs for: {artist_name}")
 
             ydl_opts = {
                 "quiet": True,
                 "extract_flat": True,
                 "skip_download": True,
-                "default_search": None,   # disable auto
-                "source_address": "0.0.0.0"  # avoid IPv6 DNS issues
+                "default_search": None,   
+                "source_address": "0.0.0.0"  
             }
 
             query = f"ytsearch5:{artist_name} official music video"
@@ -222,11 +222,11 @@ def fetch_top_songs_all():
                     info = ydl.extract_info(query, download=False)
                     entries = info.get("entries", [])
             except Exception as e:
-                print(f"⚠️ yt-dlp search failed for {artist_name}: {e}")
+                print(f"yt-dlp search failed for {artist_name}: {e}")
                 continue
 
             if not entries:
-                print(f"⚠️ No search results found for {artist_name}")
+                print(f"No search results found for {artist_name}")
                 incomplete_artists.append(artist_name)
                 continue
 
@@ -254,7 +254,7 @@ def fetch_top_songs_all():
                     added_count += 1
 
         db.session.commit()
-        print(f"\n✅ Added {added_count} songs total")
+        print(f"\nAdded {added_count} songs total")
 
         return jsonify({
             "message": f"Added {added_count} songs total.",
@@ -264,7 +264,7 @@ def fetch_top_songs_all():
 
     except Exception as e:
         db.session.rollback()
-        print("❌ Error fetching songs:", e)
+        print("Error fetching songs:", e)
         return jsonify({"error": str(e)}), 500
 
 
