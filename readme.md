@@ -1,5 +1,5 @@
-git clone https://github.com/<your-username>/class_music.git
-cd class_music/backend
+git clone https://github.com/coindxter/class_music.git \
+cd class_music/backend \
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
