@@ -41,11 +41,12 @@ class Artist(db.Model):
     songs = db.relationship("Song", backref="artist", cascade="all, delete", lazy=True)
 
 class Song(db.Model):
-    __tablename__ = "songs"
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(100))
-    link = db.Column(db.String(255))  # ← new field
+    title = db.Column(db.String(255))
+    link = db.Column(db.String(500))
     artist_id = db.Column(db.Integer, db.ForeignKey("artists.id"))
+
+
 
 @app.route("/")
 def serve_react():
@@ -198,6 +199,7 @@ def fetch_top_songs_all():
     """
     Fetch top 5 YouTube videos per artist categorized as 'Music' and
     that look like individual tracks (not albums, mixes, or compilations).
+    Adds canonical YouTube URLs from yt-dlp metadata for later downloads.
     """
     try:
         artists = Artist.query.all()
@@ -217,14 +219,14 @@ def fetch_top_songs_all():
 
         for artist in artists:
             artist_name = artist.name
-            print(f"\n🎧 Searching top music videos for: {artist_name}")
+            print(f"\nSearching top music videos for: {artist_name}")
             valid_songs = []
 
             for attempt in range(3):
                 print(f"  Attempt {attempt + 1}...")
                 search = VideosSearch(f"{artist_name} songs", limit=10)
                 results = search.result().get("result", [])
-                time.sleep(random.uniform(0.6, 1.3))  # avoid throttling
+                time.sleep(random.uniform(0.6, 1.3)) 
 
                 for vid in results:
                     link = vid["link"]
@@ -238,37 +240,36 @@ def fetch_top_songs_all():
                         uploader = info.get("uploader") or ""
                         lower_title = title.lower()
 
-                        # ✅ Only consider Music category
+                        canonical_url = info.get("webpage_url", link)
+
                         if category and "Music" in category:
 
-                            # ❌ Skip compilations, playlists, albums, etc.
                             if any(bad in lower_title for bad in [
                                 "mix", "full album", "best of", "compilation",
                                 "playlist", "hour", "non stop", "non-stop",
                                 "greatest hits", "collection", "discography"
                             ]):
-                                print(f"⏭️ Skipped compilation: {title}")
+                                print(f"⏭Skipped compilation: {title}")
                                 continue
 
-                            # ✅ Keep likely single-track titles
                             if "-" in title or len(title.split()) <= 10:
                                 if title not in [s["title"] for s in valid_songs]:
                                     valid_songs.append({
                                         "title": title,
-                                        "link": link,
+                                        "link": canonical_url, 
                                         "uploader": uploader
                                     })
                                     print(f"🎵 Added {title}")
 
                     except Exception as e:
-                        print(f"⚠️ Skipping {link}: {e}")
+                        print(f"Skipping {link}: {e}")
                         continue
 
                 if len(valid_songs) >= 5:
-                    break  # stop early once we have enough
+                    break  
 
             if not valid_songs:
-                print(f"⚠️ No valid music videos found for {artist_name}")
+                print(f"No valid music videos found for {artist_name}")
                 incomplete_artists.append(artist_name)
                 continue
 
@@ -287,6 +288,7 @@ def fetch_top_songs_all():
                 new_song = Song(title=title, link=link, artist_id=artist.id)
                 db.session.add(new_song)
                 added_count += 1
+
                 results_summary[artist_name].append({
                     "title": title,
                     "link": link,
@@ -295,10 +297,10 @@ def fetch_top_songs_all():
 
             if len(top_songs) < 5:
                 incomplete_artists.append(artist_name)
-                print(f"⚠️ Only found {len(top_songs)} songs for {artist_name}")
+                print(f"Only found {len(top_songs)} songs for {artist_name}")
 
         db.session.commit()
-        print(f"\n✅ Added {added_count} songs (skipped {skipped_count})")
+        print(f"\nAdded {added_count} songs (skipped {skipped_count})")
 
         return jsonify({
             "message": f"Added {added_count} songs (skipped {skipped_count}).",
@@ -308,7 +310,7 @@ def fetch_top_songs_all():
 
     except Exception as e:
         db.session.rollback()
-        print("❌ Error fetching songs:", e)
+        print("Error fetching songs:", e)
         return jsonify({"error": str(e)}), 500
 
 @app.errorhandler(404)
@@ -318,4 +320,4 @@ def not_found(e):
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(host="localhost", port=5050, debug=True)
+    app.run(host="0.0.0.0", port=5050, debug=True)
