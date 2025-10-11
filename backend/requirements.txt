@@ -7,3 +7,5 @@ Flask
 Flask-SQLAlchemy
 mysqlclient
 cryptography
+youtube-search-python
+requests

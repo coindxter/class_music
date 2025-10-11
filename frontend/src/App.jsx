@@ -11,8 +11,6 @@ export default function App() {
   const [expandedStudents, setExpandedStudents] = useState({});
   const [expandedArtists, setExpandedArtists] = useState({});
   const [pendingDelete, setPendingDelete] = useState(null);
-
-  // New fetch state hooks
   const [isFetching, setIsFetching] = useState(false);
   const [fetchMessage, setFetchMessage] = useState("");
 
@@ -48,7 +46,7 @@ export default function App() {
         endpoint = `${API_BASE}/delete/${type}/${id}`;
       }
       const response = await axios.delete(endpoint);
-      console.log("✅ Server response:", response.data);
+      console.log("Server response:", response.data);
       fetchClasses();
     } catch (error) {
       console.error("Delete error:", error);

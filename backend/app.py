@@ -1,14 +1,12 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from youtubesearchpython import VideosSearch
 import yt_dlp
 import os
 import uuid
 import requests
 import time
 import random
-
 
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 CORS(app)
@@ -18,7 +16,11 @@ db_path = os.path.join(BASE_DIR, "classdj.db")
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
 db = SQLAlchemy(app)
+
 
 class ClassPeriod(db.Model):
     __tablename__ = "class_periods"
@@ -47,7 +49,6 @@ class Song(db.Model):
     artist_id = db.Column(db.Integer, db.ForeignKey("artists.id"))
 
 
-
 @app.route("/")
 def serve_react():
     return send_from_directory(app.static_folder, "index.html")
@@ -69,12 +70,13 @@ def get_classes_full():
                 artist_data = {
                     "id": a.id,
                     "name": a.name,
-                    "songs": [{"id": song.id, "title": song.title} for song in a.songs],
+                    "songs": [{"id": song.id, "title": song.title, "link": song.link} for song in a.songs],
                 }
                 student_data["artists"].append(artist_data)
             class_data["students"].append(student_data)
         result.append(class_data)
     return jsonify(result)
+
 
 @app.route("/add_class", methods=["POST"])
 def add_class():
@@ -116,9 +118,10 @@ def add_song():
     data = request.get_json()
     title = data.get("title")
     artist_id = data.get("artist_id")
+    link = data.get("link", "")
     if not title or not artist_id:
         return jsonify({"error": "Missing title or artist_id"}), 400
-    song = Song(title=title, artist_id=artist_id)
+    song = Song(title=title, link=link, artist_id=artist_id)
     db.session.add(song)
     db.session.commit()
     return jsonify({"message": f"Song {title} added to artist {artist_id}"}), 201
@@ -172,8 +175,6 @@ def delete_all():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 def download_mp3_from_youtube(url, artist_name):
     safe_artist = artist_name.replace(" ", "_")
@@ -196,126 +197,81 @@ def download_mp3_from_youtube(url, artist_name):
 
 @app.route("/fetch_top_songs_all", methods=["GET"])
 def fetch_top_songs_all():
-    """
-    Fetch top 5 YouTube videos per artist categorized as 'Music' and
-    that look like individual tracks (not albums, mixes, or compilations).
-    Adds canonical YouTube URLs from yt-dlp metadata for later downloads.
-    """
     try:
         artists = Artist.query.all()
         added_count = 0
-        skipped_count = 0
         results_summary = {}
         incomplete_artists = []
 
-        ydl_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "skip_download": True,
-            "extract_flat": False,
-            "noplaylist": True,
-            "extractor_args": {"youtube": {"player_client": ["web"]}},
-        }
-
         for artist in artists:
             artist_name = artist.name
-            print(f"\nSearching top music videos for: {artist_name}")
-            valid_songs = []
+            print(f"\n🔍 Searching top songs for: {artist_name}")
 
-            for attempt in range(3):
-                print(f"  Attempt {attempt + 1}...")
-                search = VideosSearch(f"{artist_name} songs", limit=10)
-                results = search.result().get("result", [])
-                time.sleep(random.uniform(0.6, 1.3)) 
+            ydl_opts = {
+                "quiet": True,
+                "extract_flat": True,
+                "skip_download": True,
+                "default_search": None,   # disable auto
+                "source_address": "0.0.0.0"  # avoid IPv6 DNS issues
+            }
 
-                for vid in results:
-                    link = vid["link"]
+            query = f"ytsearch5:{artist_name} official music video"
 
-                    try:
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            info = ydl.extract_info(link, download=False)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(query, download=False)
+                    entries = info.get("entries", [])
+            except Exception as e:
+                print(f"⚠️ yt-dlp search failed for {artist_name}: {e}")
+                continue
 
-                        category = info.get("categories", [])
-                        title = info.get("title") or ""
-                        uploader = info.get("uploader") or ""
-                        lower_title = title.lower()
-
-                        canonical_url = info.get("webpage_url", link)
-
-                        if category and "Music" in category:
-
-                            if any(bad in lower_title for bad in [
-                                "mix", "full album", "best of", "compilation",
-                                "playlist", "hour", "non stop", "non-stop",
-                                "greatest hits", "collection", "discography"
-                            ]):
-                                print(f"⏭Skipped compilation: {title}")
-                                continue
-
-                            if "-" in title or len(title.split()) <= 10:
-                                if title not in [s["title"] for s in valid_songs]:
-                                    valid_songs.append({
-                                        "title": title,
-                                        "link": canonical_url, 
-                                        "uploader": uploader
-                                    })
-                                    print(f"🎵 Added {title}")
-
-                    except Exception as e:
-                        print(f"Skipping {link}: {e}")
-                        continue
-
-                if len(valid_songs) >= 5:
-                    break  
-
-            if not valid_songs:
-                print(f"No valid music videos found for {artist_name}")
+            if not entries:
+                print(f"⚠️ No search results found for {artist_name}")
                 incomplete_artists.append(artist_name)
                 continue
 
-            top_songs = valid_songs[:5]
-            results_summary[artist_name] = []
-
-            for vid in top_songs:
-                title = vid["title"]
-                link = vid["link"]
-
-                existing = Song.query.filter_by(title=title, artist_id=artist.id).first()
-                if existing:
-                    skipped_count += 1
+            valid_songs = []
+            for entry in entries:
+                title = entry.get("title")
+                video_id = entry.get("id")
+                if not title or not video_id:
                     continue
+                link = f"https://www.youtube.com/watch?v={video_id}"
+                valid_songs.append({"title": title, "link": link})
+                print(f"🎵 Found: {title}")
 
-                new_song = Song(title=title, link=link, artist_id=artist.id)
-                db.session.add(new_song)
-                added_count += 1
-
-                results_summary[artist_name].append({
-                    "title": title,
-                    "link": link,
-                    "uploader": vid["uploader"]
-                })
-
-            if len(top_songs) < 5:
+            if not valid_songs:
                 incomplete_artists.append(artist_name)
-                print(f"Only found {len(top_songs)} songs for {artist_name}")
+                continue
+
+            results_summary[artist_name] = valid_songs
+
+            # save to DB
+            for vid in valid_songs[:5]:
+                existing = Song.query.filter_by(title=vid["title"], artist_id=artist.id).first()
+                if not existing:
+                    db.session.add(Song(title=vid["title"], link=vid["link"], artist_id=artist.id))
+                    added_count += 1
 
         db.session.commit()
-        print(f"\nAdded {added_count} songs (skipped {skipped_count})")
+        print(f"\n✅ Added {added_count} songs total")
 
         return jsonify({
-            "message": f"Added {added_count} songs (skipped {skipped_count}).",
+            "message": f"Added {added_count} songs total.",
             "incomplete_artists": incomplete_artists,
             "data": results_summary
         }), 200
 
     except Exception as e:
         db.session.rollback()
-        print("Error fetching songs:", e)
+        print("❌ Error fetching songs:", e)
         return jsonify({"error": str(e)}), 500
+
 
 @app.errorhandler(404)
 def not_found(e):
     return send_from_directory(app.static_folder, "index.html")
+
 
 if __name__ == "__main__":
     with app.app_context():
