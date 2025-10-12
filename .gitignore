@@ -18,4 +18,5 @@ env/
 *.njsproj
 *.sln
 *.sw?
-
+backend/downloads/
+*.db

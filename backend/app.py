@@ -47,6 +47,7 @@ class Song(db.Model):
     title = db.Column(db.String(255))
     link = db.Column(db.String(500))
     artist_id = db.Column(db.Integer, db.ForeignKey("artists.id"))
+    file_path = db.Column(db.String(500), nullable=True) 
 
 
 @app.route("/")
@@ -176,24 +177,59 @@ def delete_all():
         return jsonify({"error": str(e)}), 500
 
 
-def download_mp3_from_youtube(url, artist_name):
-    safe_artist = artist_name.replace(" ", "_")
-    filename = f"{safe_artist}_{uuid.uuid4().hex}.mp3"
-    filepath = os.path.join(DOWNLOAD_DIR, filename)
+@app.route("/download_student_songs/<int:student_id>", methods=["POST", "GET"])
+def download_student_songs(student_id):
 
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": filepath,
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
-        ],
-        "quiet": True,
-    }
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify({"error": "Student not found"}), 404
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+    downloaded = []
+    skipped = []
+    failed = []
 
-    return filepath
+    for artist in student.artists:
+        for song in artist.songs:
+            artist_name = artist.name or "UnknownArtist"
+            safe_title = song.title.replace(" ", "_").replace("/", "_")
+            filename = f"{artist_name}_{safe_title}.mp3"
+            filepath = os.path.join(DOWNLOAD_DIR, filename)
+
+            if os.path.exists(filepath):
+                skipped.append(song.title)
+                song.file_path = filepath
+                continue
+
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": filepath,
+                "postprocessors": [
+                    {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
+                ],
+                "quiet": False,
+            }
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([song.link])
+
+                song.file_path = filepath
+                downloaded.append(song.title)
+                print(f"Downloaded: {song.title}")
+
+            except Exception as e:
+                print(f"Failed to download {song.title}: {e}")
+                failed.append({"title": song.title, "error": str(e)})
+
+    db.session.commit()
+
+    return jsonify({
+        "message": f"Downloaded {len(downloaded)} songs, skipped {len(skipped)}, failed {len(failed)}.",
+        "downloaded": downloaded,
+        "skipped": skipped,
+        "failed": failed
+    }), 200
+
 
 @app.route("/fetch_top_songs_all", methods=["GET"])
 def fetch_top_songs_all():
@@ -238,7 +274,7 @@ def fetch_top_songs_all():
                     continue
                 link = f"https://www.youtube.com/watch?v={video_id}"
                 valid_songs.append({"title": title, "link": link})
-                print(f"🎵 Found: {title}")
+                print(f"Found: {title}")
 
             if not valid_songs:
                 incomplete_artists.append(artist_name)
@@ -246,7 +282,6 @@ def fetch_top_songs_all():
 
             results_summary[artist_name] = valid_songs
 
-            # save to DB
             for vid in valid_songs[:5]:
                 existing = Song.query.filter_by(title=vid["title"], artist_id=artist.id).first()
                 if not existing:
