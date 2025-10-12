@@ -20,3 +20,4 @@ env/
 *.sw?
 backend/downloads/
 *.db
+node_modules/
