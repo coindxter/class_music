@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import yt_dlp
 import os
+import re
 
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 CORS(app)
@@ -177,19 +178,23 @@ def download_student_songs(student_id):
         for song in artist.songs:
             artist_name = artist.name or "UnknownArtist"
             safe_title = song.title.replace(" ", "_").replace("/", "_")
-            filename = f"{artist_name}_{safe_title}.mp3"
+            filename = f"{artist_name}_{safe_title}"
             filepath = os.path.join(DOWNLOAD_DIR, filename)
 
-            if os.path.exists(filepath):
+            if os.path.exists(filepath + ".mp3"):
                 skipped.append(song.title)
-                song.file_path = filename
+                song.file_path = filename + ".mp3"
                 continue
 
             ydl_opts = {
                 "format": "bestaudio/best",
-                "outtmpl": filepath,
+                "outtmpl": filepath,  
                 "postprocessors": [
-                    {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192"
+                    }
                 ],
                 "quiet": False,
             }
@@ -198,12 +203,12 @@ def download_student_songs(student_id):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([song.link])
 
-                song.file_path = filename
+                song.file_path = filename + ".mp3"
                 downloaded.append(song.title)
-                print(f"Downloaded: {song.title}")
+                print(f"[DOWNLOAD] Downloaded: {song.title} → {song.file_path}")
 
             except Exception as e:
-                print(f"Failed to download {song.title}: {e}")
+                print(f"[DOWNLOAD] Failed to download {song.title}: {e}")
                 failed.append({"title": song.title, "error": str(e)})
 
     db.session.commit()
@@ -228,36 +233,99 @@ def delete_class(class_id):
     class_item = ClassPeriod.query.get(class_id)
     if not class_item:
         return jsonify({"error": "Class not found"}), 404
+
+    for student in class_item.students:
+        for artist in student.artists:
+            for song in artist.songs:
+                if song.file_path:
+                    file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+
     db.session.delete(class_item)
     db.session.commit()
-    return jsonify({"message": "Class deleted successfully"}), 200
+    return jsonify({"message": "Class and associated files deleted successfully"}), 200
 
 @app.route("/delete/student/<int:student_id>", methods=["DELETE"])
 def delete_student(student_id):
     student = Student.query.get(student_id)
     if not student:
         return jsonify({"error": "Student not found"}), 404
+
+    for artist in student.artists:
+        for song in artist.songs:
+            if song.file_path:
+                file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+
     db.session.delete(student)
     db.session.commit()
-    return jsonify({"message": "Student deleted successfully"}), 200
+    return jsonify({"message": "Student and associated files deleted successfully"}), 200
 
 @app.route("/delete/artist/<int:artist_id>", methods=["DELETE"])
 def delete_artist(artist_id):
     artist = Artist.query.get(artist_id)
     if not artist:
         return jsonify({"error": "Artist not found"}), 404
+
+    for song in artist.songs:
+        if song.file_path:
+            file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
     db.session.delete(artist)
     db.session.commit()
-    return jsonify({"message": "Artist deleted successfully"}), 200
+    return jsonify({"message": "Artist and associated files deleted successfully"}), 200
 
 @app.route("/delete/song/<int:song_id>", methods=["DELETE"])
 def delete_song(song_id):
     song = Song.query.get(song_id)
     if not song:
+        print(f"[DELETE SONG] Song with ID {song_id} not found.")
         return jsonify({"error": "Song not found"}), 404
+
+    if song.file_path:
+        file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
+        print(f"[DELETE SONG] Deleting file: {file_path}")
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"[DELETE SONG] File deleted successfully.")
+            except Exception as e:
+                print(f"[DELETE SONG] Error deleting file: {e}")
+        else:
+            print(f"[DELETE SONG] File does not exist at path: {file_path}")
+    else:
+        print(f"[DELETE SONG] No file_path stored for song {song_id}")
+
+    # Delete the DB record
     db.session.delete(song)
     db.session.commit()
-    return jsonify({"message": "Song deleted successfully"}), 200
+    print(f"[DELETE SONG] DB entry deleted for song {song_id}")
+
+    return jsonify({"message": "Song and file deleted successfully"}), 200
+
+@app.route("/delete/all", methods=["DELETE"])
+def delete_all():
+    try:
+        for filename in os.listdir(DOWNLOAD_DIR):
+            file_path = os.path.join(DOWNLOAD_DIR, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+
+        Song.query.delete()
+        Artist.query.delete()
+        Student.query.delete()
+        ClassPeriod.query.delete()
+        db.session.commit()
+
+        return jsonify({"message": "All data and files deleted successfully!"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/fetch_top_songs_all", methods=["GET"])
 def fetch_top_songs_all():
@@ -328,7 +396,6 @@ def fetch_top_songs_all():
         db.session.rollback()
         print("Error fetching songs:", e)
         return jsonify({"error": str(e)}), 500
-
 
 @app.errorhandler(404)
 def not_found(e):
