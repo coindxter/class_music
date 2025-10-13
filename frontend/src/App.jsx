@@ -13,6 +13,10 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
   const [fetchMessage, setFetchMessage] = useState("");
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [currentStudentName, setCurrentStudentName] = useState(null);
+
+
 
   const fetchClasses = async () => {
     try {
@@ -74,377 +78,407 @@ export default function App() {
     }
   };
 
-  return (
-    <div
+
+const handleDownloadStudentSongs = async (studentId) => {
+  try {
+    const res = await fetch(`${API_BASE}/download_student_songs/${studentId}`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      console.log(`${data.message}`);
+      setRefreshTrigger((prev) => prev + 1);
+    } else {
+      alert(`Failed: ${data.error || "Unknown error"}`);
+    }
+  } catch (err) {
+    console.error("Download error:", err);
+    alert("Failed to contact server.");
+  }
+};
+
+
+return (
+  <div
+    style={{
+      color: "white",
+      backgroundColor: "#202020",
+      minHeight: "100vh",
+      width: "100vw",
+      margin: 0,
+      padding: "30px",
+      fontFamily: "Arial, sans-serif",
+      boxSizing: "border-box",
+      overflowX: "hidden",
+    }}
+  >
+    {/* Title */}
+    <h1
       style={{
-        color: "white",
-        backgroundColor: "#202020",
-        minHeight: "100vh",
-        width: "100vw",
-        margin: 0,
-        padding: "30px",
-        fontFamily: "Arial, sans-serif",
-        boxSizing: "border-box",
-        overflowX: "hidden",
+        fontSize: "2.5rem",
+        fontWeight: "bold",
+        marginBottom: "20px",
       }}
     >
-      {/* Title */}
-      <h1
+      🎵 Class Music Dashboard
+    </h1>
+
+    {/* Top control bar */}
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "20px",
+        marginBottom: "30px",
+        flexWrap: "wrap",
+      }}
+    >
+      {/* 🔥 Delete ALL Data */}
+      <button
+        onClick={() => handleDelete("all")}
         style={{
-          fontSize: "2.5rem",
+          backgroundColor: "#ff4d4d",
+          color: "white",
+          border: "none",
+          padding: "10px 20px",
+          borderRadius: "8px",
+          cursor: "pointer",
+          fontSize: "1rem",
           fontWeight: "bold",
+          transition: "background-color 0.2s ease",
+        }}
+        onMouseEnter={(e) => (e.target.style.backgroundColor = "#ff1a1a")}
+        onMouseLeave={(e) => (e.target.style.backgroundColor = "#ff4d4d")}
+      >
+        🧨 Delete ALL Data
+      </button>
+
+      {/* 🎵 Fetch Top Songs */}
+      <button
+        onClick={handleFetchSongs}
+        style={{
+          backgroundColor: "#4d79ff",
+          color: "white",
+          border: "none",
+          padding: "10px 20px",
+          borderRadius: "8px",
+          cursor: "pointer",
+          fontSize: "1rem",
+          fontWeight: "bold",
+          transition: "background-color 0.2s ease",
+        }}
+        onMouseEnter={(e) => (e.target.style.backgroundColor = "#3355cc")}
+        onMouseLeave={(e) => (e.target.style.backgroundColor = "#4d79ff")}
+      >
+        {isFetching ? "🎵 Fetching..." : "🎶 Fetch Top Songs"}
+      </button>
+
+      {/* ➕ Add Form */}
+      <AddForm classes={classes} onAddComplete={fetchClasses} />
+    </div>
+
+    {/* 🪄 Music Player */}
+    <div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
+        <MusicPlayer refreshTrigger={refreshTrigger} />
+    </div>
+
+    {/* Fetch message feedback */}
+    {fetchMessage && (
+      <div
+        style={{
+          color: fetchMessage.startsWith("✅") ? "#80ff80" : "#ff6666",
+          fontWeight: "bold",
+          marginTop: "-20px",
           marginBottom: "20px",
         }}
       >
-        🎵 Class Music Dashboard
-      </h1>
-
-      {/* Top control bar */}
-     <div
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: "20px",
-    marginBottom: "30px",
-    flexWrap: "wrap",
-  }}
->
-  {/* 🔥 Delete ALL Data */}
-  <button
-    onClick={() => handleDelete("all")}
-    style={{
-      backgroundColor: "#ff4d4d",
-      color: "white",
-      border: "none",
-      padding: "10px 20px",
-      borderRadius: "8px",
-      cursor: "pointer",
-      fontSize: "1rem",
-      fontWeight: "bold",
-      transition: "background-color 0.2s ease",
-    }}
-    onMouseEnter={(e) => (e.target.style.backgroundColor = "#ff1a1a")}
-    onMouseLeave={(e) => (e.target.style.backgroundColor = "#ff4d4d")}
-  >
-    🧨 Delete ALL Data
-  </button>
-
-  {/* 🎵 Fetch Top Songs */}
-  <button
-    onClick={handleFetchSongs}
-    style={{
-      backgroundColor: "#4d79ff",
-      color: "white",
-      border: "none",
-      padding: "10px 20px",
-      borderRadius: "8px",
-      cursor: "pointer",
-      fontSize: "1rem",
-      fontWeight: "bold",
-      transition: "background-color 0.2s ease",
-    }}
-    onMouseEnter={(e) => (e.target.style.backgroundColor = "#3355cc")}
-    onMouseLeave={(e) => (e.target.style.backgroundColor = "#4d79ff")}
-  >
-    {isFetching ? "🎵 Fetching..." : "🎶 Fetch Top Songs"}
-  </button>
-
-  {/* ➕ Add Form */}
-  <AddForm classes={classes} onAddComplete={fetchClasses} />
-</div>
-
-      {/* 🪄 Drop the music player here */}
-      <div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
-        <MusicPlayer />
+        {fetchMessage}
       </div>
+    )}
 
-      {/* Fetch message feedback */}
-      {fetchMessage && (
+    {/* Class cards grid */}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+        gap: "20px",
+        alignItems: "start",
+      }}
+    >
+      {classes.map((c) => (
         <div
+          key={c.id}
+          onClick={() => toggleClass(c.id)}
           style={{
-            color: fetchMessage.startsWith("✅") ? "#80ff80" : "#ff6666",
-            fontWeight: "bold",
-            marginTop: "-20px",
-            marginBottom: "20px",
+            backgroundColor: "#2b2b2b",
+            borderRadius: "10px",
+            padding: "20px",
+            width: "100%",
+            boxShadow: "0 4px 10px rgba(0,0,0,0.3)",
+            cursor: "pointer",
+            transition: "all 0.25s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "scale(1.05)";
+            e.currentTarget.style.boxShadow = "0 0 15px rgba(145,184,255,0.6)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
+            e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.3)";
           }}
         >
-          {fetchMessage}
-        </div>
-      )}
-
-      {/* Class cards grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
-          gap: "20px",
-          alignItems: "start",
-        }}
-      >
-        {classes.map((c) => (
+          {/* Class title + delete */}
           <div
-            key={c.id}
-            onClick={() => toggleClass(c.id)}
             style={{
-              backgroundColor: "#2b2b2b",
-              borderRadius: "10px",
-              padding: "20px",
-              width: "100%",
-              boxShadow: "0 4px 10px rgba(0,0,0,0.3)",
-              cursor: "pointer",
-              transition: "all 0.25s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "scale(1.05)";
-              e.currentTarget.style.boxShadow =
-                "0 0 15px rgba(145,184,255,0.6)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "scale(1)";
-              e.currentTarget.style.boxShadow =
-                "0 4px 10px rgba(0,0,0,0.3)";
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "10px",
+              fontSize: "1.5rem",
+              fontWeight: "bold",
+              color: "#91b8ff",
+              marginBottom: "10px",
+              textAlign: "center",
             }}
           >
-            {/* Class title + delete */}
-            <div
+            <span>{c.name}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete("class", c.id);
+              }}
               style={{
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: "10px",
-                fontSize: "1.5rem",
-                fontWeight: "bold",
-                color: "#91b8ff",
-                marginBottom: "10px",
-                textAlign: "center",
+                background: "none",
+                border: "none",
+                color: "#aaa",
+                cursor: "pointer",
+                fontSize: "1rem",
+                transition: "color 0.2s ease, transform 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.color = "#ff6666";
+                e.target.style.transform = "scale(1.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.color = "#aaa";
+                e.target.style.transform = "scale(1)";
               }}
             >
-              <span>{c.name}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete("class", c.id);
-                }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#aaa",
-                  cursor: "pointer",
-                  fontSize: "1rem",
-                  transition: "color 0.2s ease, transform 0.15s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.color = "#ff6666";
-                  e.target.style.transform = "scale(1.3)";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.color = "#aaa";
-                  e.target.style.transform = "scale(1)";
-                }}
-              >
-                🗑
-              </button>
-            </div>
+              🗑
+            </button>
+          </div>
 
-            {/* Expanded students */}
-            <div
-              style={{
-                maxHeight: expandedClasses[c.id] ? "1000px" : "0",
-                overflow: "hidden",
-                transition: "max-height 0.4s ease",
-              }}
-            >
-              <ul style={{ listStyleType: "none", padding: 0 }}>
-                {c.students.map((s) => (
-                  <li key={s.id} style={{ marginBottom: "8px" }}>
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleStudent(s.id);
-                        }}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "#8fd3ff",
-                          cursor: "pointer",
-                          fontWeight: "bold",
-                          fontSize: "1rem",
-                          flexGrow: 1,
-                          textAlign: "left",
-                        }}
-                      >
-                        {expandedStudents[s.id] ? "▼" : "▶"} {s.name}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete("student", s.id);
-                        }}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "#aaa",
-                          cursor: "pointer",
-                          fontSize: "1rem",
-                          transition:
-                            "color 0.2s ease, transform 0.15s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.target.style.color = "#ff6666";
-                          e.target.style.transform = "scale(1.3)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.color = "#aaa";
-                          e.target.style.transform = "scale(1)";
-                        }}
-                      >
-                        🗑
-                      </button>
-                    </div>
-
-                    {/* Artists */}
-                    <div
+          {/* Expanded students */}
+          <div
+            style={{
+              maxHeight: expandedClasses[c.id] ? "1000px" : "0",
+              overflow: "hidden",
+              transition: "max-height 0.4s ease",
+            }}
+          >
+            <ul style={{ listStyleType: "none", padding: 0 }}>
+              {c.students.map((s) => (
+                <li key={s.id} style={{ marginBottom: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    {/* Toggle Student */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleStudent(s.id);
+                      }}
                       style={{
-                        maxHeight: expandedStudents[s.id] ? "800px" : "0",
-                        overflow: "hidden",
-                        transition: "max-height 0.3s ease",
+                        background: "none",
+                        border: "none",
+                        color: "#8fd3ff",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        fontSize: "1rem",
+                        flexGrow: 1,
+                        textAlign: "left",
                       }}
                     >
-                      <ul
-                        style={{
-                          marginLeft: "15px",
-                          listStyleType: "none",
-                          padding: 0,
-                        }}
-                      >
-                        {s.artists.map((a) => (
-                          <li key={a.id} style={{ marginBottom: "5px" }}>
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                              }}
-                            >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleArtist(a.id);
-                                }}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  color: "#ffcc8f",
-                                  cursor: "pointer",
-                                  fontWeight: "500",
-                                  flexGrow: 1,
-                                  textAlign: "left",
-                                }}
-                              >
-                                {expandedArtists[a.id]
-                                  ? "🎤 ▼"
-                                  : "🎤 ▶"}{" "}
-                                {a.name}
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete("artist", a.id);
-                                }}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  color: "#aaa",
-                                  cursor: "pointer",
-                                  fontSize: "1rem",
-                                  transition:
-                                    "color 0.2s ease, transform 0.15s ease",
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.target.style.color = "#ff6666";
-                                  e.target.style.transform = "scale(1.3)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.target.style.color = "#aaa";
-                                  e.target.style.transform = "scale(1)";
-                                }}
-                              >
-                                🗑
-                              </button>
-                            </div>
+                      {expandedStudents[s.id] ? "▼" : "▶"} {s.name}
+                    </button>
 
-                            {/* Songs */}
-                            <div
+                    {/* ⬇️ Download Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadStudentSongs(s.id);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "1.2rem",
+                        color: "#8fd3ff",
+                        transition: "transform 0.15s ease, color 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.transform = "scale(1.2)";
+                        e.target.style.color = "#91b8ff";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.transform = "scale(1)";
+                        e.target.style.color = "#8fd3ff";
+                      }}
+                      title="Download all songs for this student"
+                    >
+                      ⬇️
+                    </button>
+
+                    {/* 🗑 Delete Student */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete("student", s.id);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#aaa",
+                        cursor: "pointer",
+                        fontSize: "1rem",
+                        transition: "color 0.2s ease, transform 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.color = "#ff6666";
+                        e.target.style.transform = "scale(1.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.color = "#aaa";
+                        e.target.style.transform = "scale(1)";
+                      }}
+                    >
+                      🗑
+                    </button>
+                  </div>
+
+                  {/* Artists */}
+                  <div
+                    style={{
+                      maxHeight: expandedStudents[s.id] ? "800px" : "0",
+                      overflow: "hidden",
+                      transition: "max-height 0.3s ease",
+                    }}
+                  >
+                    <ul
+                      style={{
+                        marginLeft: "15px",
+                        listStyleType: "none",
+                        padding: 0,
+                      }}
+                    >
+                      {s.artists.map((a) => (
+                        <li key={a.id} style={{ marginBottom: "5px" }}>
+                          <div style={{ display: "flex", alignItems: "center" }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleArtist(a.id);
+                              }}
                               style={{
-                                maxHeight: expandedArtists[a.id]
-                                  ? "500px"
-                                  : "0",
-                                overflow: "hidden",
-                                transition: "max-height 0.3s ease",
+                                background: "none",
+                                border: "none",
+                                color: "#ffcc8f",
+                                cursor: "pointer",
+                                fontWeight: "500",
+                                flexGrow: 1,
+                                textAlign: "left",
                               }}
                             >
-                              <ul
-                                style={{
-                                  marginLeft: "15px",
-                                  listStyleType: "none",
-                                  color: "#d8aaff",
-                                }}
-                              >
-                                {a.songs.map((song) => (
-                                  <li
-                                    key={song.id}
+                              {expandedArtists[a.id] ? "🎤 ▼" : "🎤 ▶"} {a.name}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete("artist", a.id);
+                              }}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#aaa",
+                                cursor: "pointer",
+                                fontSize: "1rem",
+                                transition: "color 0.2s ease, transform 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.target.style.color = "#ff6666";
+                                e.target.style.transform = "scale(1.3)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.target.style.color = "#aaa";
+                                e.target.style.transform = "scale(1)";
+                              }}
+                            >
+                              🗑
+                            </button>
+                          </div>
+
+                          {/* Songs */}
+                          <div
+                            style={{
+                              maxHeight: expandedArtists[a.id] ? "500px" : "0",
+                              overflow: "hidden",
+                              transition: "max-height 0.3s ease",
+                            }}
+                          >
+                            <ul
+                              style={{
+                                marginLeft: "15px",
+                                listStyleType: "none",
+                                color: "#d8aaff",
+                              }}
+                            >
+                              {a.songs.map((song) => (
+                                <li
+                                  key={song.id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  🎵 {song.title}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete("song", song.id);
+                                    }}
                                     style={{
-                                      display: "flex",
-                                      justifyContent: "space-between",
-                                      alignItems: "center",
+                                      background: "none",
+                                      border: "none",
+                                      color: "#aaa",
+                                      cursor: "pointer",
+                                      fontSize: "1rem",
+                                      transition:
+                                        "color 0.2s ease, transform 0.15s ease",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.target.style.color = "#ff6666";
+                                      e.target.style.transform = "scale(1.3)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.target.style.color = "#aaa";
+                                      e.target.style.transform = "scale(1)";
                                     }}
                                   >
-                                    🎵 {song.title}
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDelete(
-                                          "song",
-                                          song.id
-                                        );
-                                      }}
-                                      style={{
-                                        background: "none",
-                                        border: "none",
-                                        color: "#aaa",
-                                        cursor: "pointer",
-                                        fontSize: "1rem",
-                                        transition:
-                                          "color 0.2s ease, transform 0.15s ease",
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.target.style.color = "#ff6666";
-                                        e.target.style.transform =
-                                          "scale(1.3)";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.target.style.color = "#aaa";
-                                        e.target.style.transform =
-                                          "scale(1)";
-                                      }}
-                                    >
-                                      🗑
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                                    🗑
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
-  );
+  </div>
+);
+
 }

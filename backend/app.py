@@ -170,31 +170,30 @@ def download_student_songs(student_id):
     if not student:
         return jsonify({"error": "Student not found"}), 404
 
+    try:
+        for filename in os.listdir(DOWNLOAD_DIR):
+            file_path = os.path.join(DOWNLOAD_DIR, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+                print(f"[CLEANUP] Deleted old file: {file_path}")
+    except Exception as e:
+        print("[CLEANUP ERROR]", e)
+        return jsonify({"error": f"Failed to clean old files: {e}"}), 500
+
     downloaded = []
-    skipped = []
     failed = []
 
     for artist in student.artists:
         for song in artist.songs:
             artist_name = artist.name or "UnknownArtist"
-            safe_title = song.title.replace(" ", "_").replace("/", "_")
-            filename = f"{artist_name}_{safe_title}"
+            filename = song.file_path or f"{artist_name}_{song.title}.mp3"
             filepath = os.path.join(DOWNLOAD_DIR, filename)
-
-            if os.path.exists(filepath + ".mp3"):
-                skipped.append(song.title)
-                song.file_path = filename + ".mp3"
-                continue
 
             ydl_opts = {
                 "format": "bestaudio/best",
-                "outtmpl": filepath,  
+                "outtmpl": filepath,
                 "postprocessors": [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                        "preferredquality": "192"
-                    }
+                    {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
                 ],
                 "quiet": False,
             }
@@ -203,23 +202,21 @@ def download_student_songs(student_id):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([song.link])
 
-                song.file_path = filename + ".mp3"
+                song.file_path = filename
                 downloaded.append(song.title)
-                print(f"[DOWNLOAD] Downloaded: {song.title} → {song.file_path}")
+                print(f"[DOWNLOAD] Downloaded: {song.title}")
 
             except Exception as e:
-                print(f"[DOWNLOAD] Failed to download {song.title}: {e}")
+                print(f"[DOWNLOAD ERROR] Failed to download {song.title}: {e}")
                 failed.append({"title": song.title, "error": str(e)})
 
     db.session.commit()
 
     return jsonify({
-        "message": f"Downloaded {len(downloaded)} songs, skipped {len(skipped)}, failed {len(failed)}.",
+        "message": f"Downloaded {len(downloaded)} songs for {student.name}.",
         "downloaded": downloaded,
-        "skipped": skipped,
         "failed": failed
     }), 200
-
 
 @app.route("/songs/<path:filename>")
 def serve_song(filename):
@@ -300,7 +297,6 @@ def delete_song(song_id):
     else:
         print(f"[DELETE SONG] No file_path stored for song {song_id}")
 
-    # Delete the DB record
     db.session.delete(song)
     db.session.commit()
     print(f"[DELETE SONG] DB entry deleted for song {song_id}")

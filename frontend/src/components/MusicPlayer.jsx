@@ -1,15 +1,51 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
-export default function MusicPlayer({ currentSong, nextSong, prevSong }) {
-  const audioRef = useRef(null);
+const API_BASE = "http://localhost:5050";
+
+export default function MusicPlayer() {
+  const [songs, setSongs] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const audioRef = useRef(null);
 
-  // ✅ Toggle play/pause
+  useEffect(() => {
+    const fetchSongs = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/list_songs`);
+        const data = await res.json();
+        if (res.ok) {
+          const urls = data.songs.map(
+            (filename) => `${API_BASE}/songs/${encodeURIComponent(filename)}`
+          );
+          setSongs(urls);
+          if (urls.length > 0) {
+            setCurrentIndex(0);
+            setTimeout(() => {
+              if (audioRef.current) {
+                audioRef.current.play();
+                setIsPlaying(true);
+              }
+            }, 300);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching songs:", err);
+      }
+    };
+    fetchSongs();
+  }, []);
+
+  const handleTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (audio && audio.duration > 0) {
+      setProgress((audio.currentTime / audio.duration) * 100);
+    }
+  };
+
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
-
     if (isPlaying) {
       audio.pause();
     } else {
@@ -18,78 +54,81 @@ export default function MusicPlayer({ currentSong, nextSong, prevSong }) {
     setIsPlaying(!isPlaying);
   };
 
-  // ✅ Autoplay new song when currentSong changes
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio && currentSong?.src) {
-      audio.load();       // make sure new song is loaded
-      audio.play();       // autoplay
+  const nextSong = () => {
+    if (songs.length === 0) return;
+    const nextIndex = (currentIndex + 1) % songs.length;
+    setCurrentIndex(nextIndex);
+    setProgress(0);
+    setTimeout(() => {
+      audioRef.current.play();
       setIsPlaying(true);
-    }
-  }, [currentSong]);
+    }, 100);
+  };
 
-  // ✅ Update progress bar and handle song end
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const updateProgress = () => {
-      if (!audio.duration) return;
-      const percentage = (audio.currentTime / audio.duration) * 100;
-      setProgress(percentage);
-    };
-
-    audio.addEventListener("timeupdate", updateProgress);
-    audio.addEventListener("ended", nextSong); // Auto play next when song ends
-
-    return () => {
-      audio.removeEventListener("timeupdate", updateProgress);
-      audio.removeEventListener("ended", nextSong);
-    };
-  }, [nextSong]);
-
-  // ✅ Seek functionality
-  const handleSeek = (e) => {
-    const audio = audioRef.current;
-    if (!audio || !audio.duration) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    const newTime = (clickX / width) * audio.duration;
-    audio.currentTime = newTime;
+  const prevSong = () => {
+    if (songs.length === 0) return;
+    const prevIndex = (currentIndex - 1 + songs.length) % songs.length;
+    setCurrentIndex(prevIndex);
+    setProgress(0);
+    setTimeout(() => {
+      audioRef.current.play();
+      setIsPlaying(true);
+    }, 100);
   };
 
   return (
-    <div className="simple-player">
-      {/* Song Info */}
-      <div className="simple-player__info">
-        <div className="simple-player__title">
-          {currentSong?.title || "No song selected"}
-        </div>
-
-        {/* Progress Bar */}
-        <div className="simple-player__progress" onClick={handleSeek}>
-          <div
-            className="simple-player__progress-bar"
-            style={{ width: `${progress}%` }}
-          ></div>
-        </div>
+    <div
+      style={{
+        backgroundColor: "#2b2b2b",
+        padding: "20px",
+        borderRadius: "15px",
+        textAlign: "center",
+        width: "350px",
+        boxShadow: "0 4px 10px rgba(0,0,0,0.4)",
+      }}
+    >
+      <div style={{ marginBottom: "10px", fontWeight: "bold" }}>
+        {songs.length > 0
+          ? decodeURIComponent(songs[currentIndex].split("/songs/")[1])
+          : "No songs available"}
       </div>
 
-      {/* Controls */}
-      <div className="simple-player__controls">
+      <div
+        style={{
+          width: "100%",
+          height: "6px",
+          backgroundColor: "#444",
+          borderRadius: "3px",
+          marginBottom: "10px",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${progress}%`,
+            height: "100%",
+            backgroundColor: "#91b8ff",
+            transition: "width 0.2s linear",
+          }}
+        />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "center", gap: "20px" }}>
         <button onClick={prevSong}>⏮️</button>
         <button onClick={togglePlay}>{isPlaying ? "⏸️" : "▶️"}</button>
         <button onClick={nextSong}>⏭️</button>
       </div>
 
-      {/* Audio Element */}
-      <audio ref={audioRef} src={currentSong?.src} type="audio/mpeg" />
+      <audio
+        ref={audioRef}
+        src={songs[currentIndex]}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={nextSong}
+        autoPlay
+      />
     </div>
   );
 }
-
 
 
 
