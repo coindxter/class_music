@@ -45,6 +45,7 @@ class Song(db.Model):
     artist_id = db.Column(db.Integer, db.ForeignKey("artists.id"))
     file_path = db.Column(db.String(500), nullable=True)
 
+#================
 
 @app.route("/")
 def serve_react():
@@ -257,6 +258,76 @@ def delete_song(song_id):
     db.session.delete(song)
     db.session.commit()
     return jsonify({"message": "Song deleted successfully"}), 200
+
+@app.route("/fetch_top_songs_all", methods=["GET"])
+def fetch_top_songs_all():
+    try:
+        artists = Artist.query.all()
+        added_count = 0
+        results_summary = {}
+        incomplete_artists = []
+
+        for artist in artists:
+            artist_name = artist.name
+            print(f"\nSearching top songs for: {artist_name}")
+
+            ydl_opts = {
+                "quiet": True,
+                "extract_flat": True,
+                "skip_download": True,
+                "default_search": None,
+                "source_address": "0.0.0.0"
+            }
+
+            query = f"ytsearch5:{artist_name} official music video"
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(query, download=False)
+                    entries = info.get("entries", [])
+            except Exception as e:
+                print(f"yt-dlp search failed for {artist_name}: {e}")
+                continue
+
+            if not entries:
+                print(f"No search results found for {artist_name}")
+                incomplete_artists.append(artist_name)
+                continue
+
+            valid_songs = []
+            for entry in entries:
+                title = entry.get("title")
+                video_id = entry.get("id")
+                if not title or not video_id:
+                    continue
+                link = f"https://www.youtube.com/watch?v={video_id}"
+                valid_songs.append({"title": title, "link": link})
+                print(f"Found: {title}")
+
+            if not valid_songs:
+                incomplete_artists.append(artist_name)
+                continue
+
+            results_summary[artist_name] = valid_songs
+
+            for vid in valid_songs[:5]:
+                existing = Song.query.filter_by(title=vid["title"], artist_id=artist.id).first()
+                if not existing:
+                    db.session.add(Song(title=vid["title"], link=vid["link"], artist_id=artist.id))
+                    added_count += 1
+
+        db.session.commit()
+
+        return jsonify({
+            "message": f"Added {added_count} songs total.",
+            "incomplete_artists": incomplete_artists,
+            "data": results_summary
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print("Error fetching songs:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.errorhandler(404)
