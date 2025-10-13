@@ -11,6 +11,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 db_path = os.path.join(BASE_DIR, "classdj.db")
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+DOWNLOAD_FOLDER = os.path.join(BASE_DIR, "downloads")
 
 DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -49,6 +50,41 @@ class Song(db.Model):
 def serve_react():
     return send_from_directory(app.static_folder, "index.html")
 
+@app.route("/add_class", methods=["POST"])
+def add_class():
+    data = request.get_json()
+    name = data.get("name")
+    if not name:
+        return jsonify({"error": "Missing class name"}), 400
+    class_period = ClassPeriod(name=name)
+    db.session.add(class_period)
+    db.session.commit()
+    return jsonify({"message": f'Class "{name}" added successfully'}), 201
+
+@app.route("/add_student", methods=["POST"])
+def add_student():
+    data = request.get_json()
+    name = data.get("name")
+    class_id = data.get("class_id")
+    if not name or not class_id:
+        return jsonify({"error": "Missing name or class_id"}), 400
+    student = Student(name=name, class_id=class_id)
+    db.session.add(student)
+    db.session.commit()
+    return jsonify({"message": f"Student {name} added to class {class_id}"}), 201
+
+@app.route("/add_artist", methods=["POST"])
+def add_artist():
+    data = request.get_json()
+    name = data.get("name")
+    student_id = data.get("student_id")
+    if not name or not student_id:
+        return jsonify({"error": "Missing name or student_id"}), 400
+    artist = Artist(name=name, student_id=student_id)
+    db.session.add(artist)
+    db.session.commit()
+    return jsonify({"message": f"Artist {name} added to student {student_id}"}), 201
+
 @app.route("/classes_full")
 def get_classes_full():
     classes = ClassPeriod.query.all()
@@ -73,7 +109,6 @@ def get_classes_full():
             class_data["students"].append(student_data)
         result.append(class_data)
     return jsonify(result)
-
 
 @app.route("/add_song_auto", methods=["POST"])
 def add_song_auto():
@@ -126,7 +161,6 @@ def add_song_auto():
         "link": link,
         "song_id": song.id
     }), 201
-
 
 @app.route("/download_student_songs/<int:student_id>", methods=["POST", "GET"])
 def download_student_songs(student_id):
@@ -188,11 +222,61 @@ def serve_song(filename):
     except FileNotFoundError:
         return jsonify({"error": "File not found"}), 404
 
+@app.route("/delete/class/<int:class_id>", methods=["DELETE"])
+def delete_class(class_id):
+    class_item = ClassPeriod.query.get(class_id)
+    if not class_item:
+        return jsonify({"error": "Class not found"}), 404
+    db.session.delete(class_item)
+    db.session.commit()
+    return jsonify({"message": "Class deleted successfully"}), 200
+
+@app.route("/delete/student/<int:student_id>", methods=["DELETE"])
+def delete_student(student_id):
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify({"error": "Student not found"}), 404
+    db.session.delete(student)
+    db.session.commit()
+    return jsonify({"message": "Student deleted successfully"}), 200
+
+@app.route("/delete/artist/<int:artist_id>", methods=["DELETE"])
+def delete_artist(artist_id):
+    artist = Artist.query.get(artist_id)
+    if not artist:
+        return jsonify({"error": "Artist not found"}), 404
+    db.session.delete(artist)
+    db.session.commit()
+    return jsonify({"message": "Artist deleted successfully"}), 200
+
+@app.route("/delete/song/<int:song_id>", methods=["DELETE"])
+def delete_song(song_id):
+    song = Song.query.get(song_id)
+    if not song:
+        return jsonify({"error": "Song not found"}), 404
+    db.session.delete(song)
+    db.session.commit()
+    return jsonify({"message": "Song deleted successfully"}), 200
+
 
 @app.errorhandler(404)
 def not_found(e):
     return send_from_directory(app.static_folder, "index.html")
 
+@app.route("/downloads/<path:filename>")
+def serve_download(filename):
+    return send_from_directory(DOWNLOAD_FOLDER, filename)
+
+@app.route("/list_songs")
+def list_songs():
+    try:
+        files = [
+            f for f in os.listdir(DOWNLOAD_FOLDER)
+            if f.lower().endswith(".mp3")
+        ]
+        return jsonify({"songs": files})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     with app.app_context():
