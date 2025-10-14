@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+//import './App.css';
 import axios from "axios";
 import AddForm from "./components/AddForm";
 import MusicPlayer from "./components/MusicPlayer";
@@ -15,6 +16,7 @@ export default function App() {
   const [fetchMessage, setFetchMessage] = useState("");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [currentStudentName, setCurrentStudentName] = useState(null);
+
 
 
 
@@ -78,22 +80,26 @@ export default function App() {
     }
   };
 
+  const handleDownloadStudent = async (studentId, studentName) => {
+    try {
+      await fetch(`${API_BASE}/delete/all_downloads`, { method: "DELETE" });
 
-const handleDownloadStudentSongs = async (studentId) => {
-  try {
-    const res = await fetch(`${API_BASE}/download_student_songs/${studentId}`, { method: "POST" });
-    const data = await res.json();
-    if (res.ok) {
-      console.log(`${data.message}`);
-      setRefreshTrigger((prev) => prev + 1);
-    } else {
-      alert(`Failed: ${data.error || "Unknown error"}`);
+      const response = await fetch(`${API_BASE}/download_student_songs/${studentId}`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log(`✅ Downloaded ${studentName}'s playlist`);
+        setCurrentStudentName(studentName);
+        setRefreshTrigger(prev => prev + 1);  
+      } else {
+        console.error("Download failed:", data);
+      }
+    } catch (error) {
+      console.error("Error downloading student songs:", error);
     }
-  } catch (err) {
-    console.error("Download error:", err);
-    alert("Failed to contact server.");
-  }
-};
+  };
 
 
 return (
@@ -300,31 +306,27 @@ return (
 
                     {/* ⬇️ Download Button */}
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        handleDownloadStudentSongs(s.id);
+                        try {
+                          await fetch(`${API_BASE}/download_student_songs/${s.id}`);
+                          setCurrentStudentName(s.name);
+                          setRefreshTrigger((prev) => prev + 1); 
+                        } catch (err) {
+                          console.error("Download failed", err);
+                        }
                       }}
                       style={{
                         background: "none",
                         border: "none",
+                        color: "#8fd3ff",
                         cursor: "pointer",
                         fontSize: "1.2rem",
-                        color: "#8fd3ff",
-                        transition: "transform 0.15s ease, color 0.2s ease",
+                        marginRight: "10px",
                       }}
-                      onMouseEnter={(e) => {
-                        e.target.style.transform = "scale(1.2)";
-                        e.target.style.color = "#91b8ff";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.transform = "scale(1)";
-                        e.target.style.color = "#8fd3ff";
-                      }}
-                      title="Download all songs for this student"
                     >
                       ⬇️
                     </button>
-
                     {/* 🗑 Delete Student */}
                     <button
                       onClick={(e) => {
