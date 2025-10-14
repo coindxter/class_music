@@ -357,6 +357,7 @@ def fetch_top_songs_all():
             print(f"\nSearching top songs for: {artist_name}")
 
             ydl_opts = {
+                "no_check_certificates": True,
                 "quiet": True,
                 "extract_flat": True,
                 "skip_download": True,
