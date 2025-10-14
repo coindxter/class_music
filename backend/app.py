@@ -130,6 +130,7 @@ def add_song_auto():
     print(f"Searching YouTube for: {search_query}")
 
     ydl_opts = {
+        "nochecknocheckcertificate": True,
         "quiet": True,
         "extract_flat": True,
         "skip_download": True,
@@ -196,6 +197,7 @@ def download_student_songs(student_id):
                 continue
 
             ydl_opts = {
+                "nocheckcertificate": True,
                 "format": "bestaudio/best",
                 "outtmpl": filepath,
                 "postprocessors": [
@@ -357,7 +359,7 @@ def fetch_top_songs_all():
             print(f"\nSearching top songs for: {artist_name}")
 
             ydl_opts = {
-                "no_check_certificates": True,
+                "nocheckcertificate": True,
                 "quiet": True,
                 "extract_flat": True,
                 "skip_download": True,
