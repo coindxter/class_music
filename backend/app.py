@@ -196,6 +196,13 @@ def download_student_songs(student_id):
                 "format": "bestaudio/best",
                 "quiet": True,
                 "nocheckcertificate": True,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -208,7 +215,7 @@ def download_student_songs(student_id):
             return {"title": song.title, "status": "failed", "error": str(e)}
 
     results = []
-    max_workers = min(5, len(songs))  # cap concurrency at 5
+    max_workers = min(5, len(songs))  # cap concurrency
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_song = {executor.submit(download_song, song): song for song in songs}
         for future in as_completed(future_to_song):
@@ -220,7 +227,6 @@ def download_student_songs(student_id):
         "downloaded": [r for r in results if r["status"] == "success"],
         "failed": [r for r in results if r["status"] == "failed"]
     }), 200
-
 
 @app.route("/songs/<path:filename>")
 def serve_song(filename):
