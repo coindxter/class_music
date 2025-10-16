@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-//import './App.css';
+import './App.css';
 import axios from "axios";
 import AddForm from "./components/AddForm";
 import MusicPlayer from "./components/MusicPlayer";
@@ -80,6 +80,8 @@ export default function App() {
     }
   };
 
+  /*comments are fun
+  /*
   const handleDownloadStudent = async (studentId, studentName) => {
     try {
       await fetch(`${API_BASE}/delete/all_downloads`, { method: "DELETE" });
@@ -100,6 +102,72 @@ export default function App() {
       console.error("Error downloading student songs:", error);
     }
   };
+*/
+  
+function DownloadButton({ student, API_BASE, setCurrentStudentName, setRefreshTrigger }) {
+  const [downloading, setDownloading] = React.useState(false);
+
+  const handleDownload = async (e) => {
+    e.stopPropagation();
+    setDownloading(true);
+    try {
+      await fetch(`${API_BASE}/download_student_songs/${student.id}`);
+      setCurrentStudentName(student.name);
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      console.error("Download failed", err);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDownload}
+      //disabled={downloading}
+      style={{
+        position: "relative",
+        width: "24px",          // ⬅️ Keeps button size fixed
+        height: "24px",
+        background: "none",
+        border: "none",
+        color: "#8fd3ff",
+        cursor: downloading ? "not-allowed" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: "10px",
+        fontSize: "1.2rem",
+      }}
+    >
+      {/* ↓ Icon remains in place but fades */}
+      <span
+        style={{
+          opacity: downloading ? 0.3 : 1,
+          transition: "opacity 0.2s ease",
+          position: "absolute",
+        }}
+      >
+        ⬇️
+      </span>
+
+      {/* Spinner overlays the icon */}
+      {downloading && (
+        <span
+          className="spinner"
+          style={{
+            width: "18px",
+            height: "18px",
+          }}
+        />
+      )}
+    </button>
+  );
+}
+
+
+
+
 
 
 return (
@@ -115,6 +183,7 @@ return (
       boxSizing: "border-box",
       overflowX: "hidden",
     }}
+  
   >
     {/* Title */}
     <h1
@@ -305,28 +374,13 @@ return (
                     </button>
 
                     {/* ⬇️ Download Button */}
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          await fetch(`${API_BASE}/download_student_songs/${s.id}`);
-                          setCurrentStudentName(s.name);
-                          setRefreshTrigger((prev) => prev + 1); 
-                        } catch (err) {
-                          console.error("Download failed", err);
-                        }
-                      }}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: "#8fd3ff",
-                        cursor: "pointer",
-                        fontSize: "1.2rem",
-                        marginRight: "10px",
-                      }}
-                    >
-                      ⬇️
-                    </button>
+                    <DownloadButton
+                      student={s}
+                      API_BASE={API_BASE}
+                      setCurrentStudentName={setCurrentStudentName}
+                      setRefreshTrigger={setRefreshTrigger}
+                    />
+
                     {/* 🗑 Delete Student */}
                     <button
                       onClick={(e) => {

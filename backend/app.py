@@ -1,4 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from flask import current_app
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import yt_dlp
@@ -165,69 +167,60 @@ def add_song_auto():
         "song_id": song.id
     }), 201
 
-@app.route("/download_student_songs/<int:student_id>", methods=["POST", "GET"])
+import os
+from flask import jsonify
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import yt_dlp
+
+@app.route("/download_student_songs/<int:student_id>", methods=["GET"])
 def download_student_songs(student_id):
     student = Student.query.get(student_id)
     if not student:
         return jsonify({"error": "Student not found"}), 404
 
-    for file in os.listdir(DOWNLOAD_DIR):
-        file_path = os.path.join(DOWNLOAD_DIR, file)
+    songs = Song.query.join(Artist).filter(Artist.student_id == student_id).all()
+    if not songs:
+        return jsonify({"message": "No songs to download for this student."}), 200
+
+    download_dir = "downloads"
+    os.makedirs(download_dir, exist_ok=True)
+
+    def download_song(song):
         try:
-            if os.path.isfile(file_path):
-                os.remove(file_path)
-                #print(f"[CLEANUP] Deleted old file: {file_path}")
-        except Exception as e:
-            print(f"[CLEANUP ERROR] Could not delete {file_path}: {e}")
-
-    downloaded = []
-    skipped = []
-    failed = []
-
-    for artist in student.artists:
-        for song in artist.songs:
-            safe_title = song.title.replace(" ", "_").replace("/", "_")
-            artist_name = artist.name.replace(" ", "_")
-            filename = f"{artist_name}_{safe_title}"
-            filepath = os.path.join(DOWNLOAD_DIR, filename)
-
-            if os.path.exists(filepath):
-                skipped.append(song.title)
-                song.file_path = filename
-                continue
+            safe_title = "".join(c for c in song.title if c.isalnum() or c in " _-").strip()
+            filename = f"{safe_title}.%(ext)s"
+            output_path = os.path.join(download_dir, filename)
 
             ydl_opts = {
-                "nocheckcertificate": True,
+                "outtmpl": output_path,
                 "format": "bestaudio/best",
-                "outtmpl": filepath,
-                "postprocessors": [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                        "preferredquality": "192",
-                    }
-                ],
-                "quiet": False,
+                "quiet": True,
+                "nocheckcertificate": True,
             }
 
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([song.link])
-                song.file_path = filename
-                downloaded.append(song.title)
-                #print(f"[DOWNLOAD] {song.title}")
-            except Exception as e:
-                #print(f"[ERROR] Failed to download {song.title}: {e}")
-                failed.append({"title": song.title, "error": str(e)})
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([song.link])
 
-    db.session.commit()
+            print(f"Downloaded: {song.title}")
+            return {"title": song.title, "status": "success"}
+        except Exception as e:
+            print(f"Failed to download {song.title}: {e}")
+            return {"title": song.title, "status": "failed", "error": str(e)}
+
+    results = []
+    max_workers = min(5, len(songs))  # cap concurrency at 5
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_song = {executor.submit(download_song, song): song for song in songs}
+        for future in as_completed(future_to_song):
+            result = future.result()
+            results.append(result)
 
     return jsonify({
-        "message": f"Downloaded {len(downloaded)} songs, skipped {len(skipped)}, failed {len(failed)}.",
-        "downloaded": downloaded,
-        "skipped": skipped,
-        "failed": failed,
+        "student": student.name,
+        "downloaded": [r for r in results if r["status"] == "success"],
+        "failed": [r for r in results if r["status"] == "failed"]
     }), 200
+
 
 @app.route("/songs/<path:filename>")
 def serve_song(filename):
@@ -354,24 +347,23 @@ def fetch_top_songs_all():
         results_summary = {}
         incomplete_artists = []
 
+        base_opts = {
+            "nocheckcertificate": True,
+            "quiet": True,
+            "extract_flat": True,
+            "skip_download": True,
+            "default_search": None,
+            "source_address": "0.0.0.0"
+        }
+
         for artist in artists:
             artist_name = artist.name
             print(f"\nSearching top songs for: {artist_name}")
 
-            ydl_opts = {
-                "nocheckcertificate": True,
-                "quiet": True,
-                "extract_flat": True,
-                "skip_download": True,
-                "default_search": None,
-                "source_address": "0.0.0.0"
-            }
-
-            query = f"ytsearch5:{artist_name} official music video"
-
+            top_query = f"ytsearch5:{artist_name} official music video"
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(query, download=False)
+                with yt_dlp.YoutubeDL(base_opts) as ydl:
+                    info = ydl.extract_info(top_query, download=False)
                     entries = info.get("entries", [])
             except Exception as e:
                 print(f"yt-dlp search failed for {artist_name}: {e}")
@@ -382,15 +374,40 @@ def fetch_top_songs_all():
                 incomplete_artists.append(artist_name)
                 continue
 
-            valid_songs = []
+            top_titles = []
             for entry in entries:
                 title = entry.get("title")
-                video_id = entry.get("id")
-                if not title or not video_id:
+                if title:
+                    top_titles.append(title)
+
+            if not top_titles:
+                incomplete_artists.append(artist_name)
+                continue
+
+            valid_songs = []
+
+            for song_title in top_titles[:5]:
+                lyric_query = f"ytsearch1:{artist_name} {song_title} lyrics"
+                try:
+                    with yt_dlp.YoutubeDL(base_opts) as ydl:
+                        lyric_info = ydl.extract_info(lyric_query, download=False)
+                        lyric_entries = lyric_info.get("entries", [])
+                except Exception as e:
+                    print(f"Lyric search failed for {song_title}: {e}")
                     continue
-                link = f"https://www.youtube.com/watch?v={video_id}"
-                valid_songs.append({"title": title, "link": link})
-                print(f"Found: {title}")
+
+                if not lyric_entries:
+                    print(f"No lyric video found for {song_title}")
+                    continue
+
+                lyric_entry = lyric_entries[0]
+                lyric_title = lyric_entry.get("title")
+                lyric_video_id = lyric_entry.get("id")
+
+                if lyric_title and lyric_video_id:
+                    link = f"https://www.youtube.com/watch?v={lyric_video_id}"
+                    valid_songs.append({"title": lyric_title, "link": link})
+                    print(f"Matched lyric video: {lyric_title}")
 
             if not valid_songs:
                 incomplete_artists.append(artist_name)
@@ -398,7 +415,7 @@ def fetch_top_songs_all():
 
             results_summary[artist_name] = valid_songs
 
-            for vid in valid_songs[:5]:
+            for vid in valid_songs:
                 existing = Song.query.filter_by(title=vid["title"], artist_id=artist.id).first()
                 if not existing:
                     db.session.add(Song(title=vid["title"], link=vid["link"], artist_id=artist.id))
@@ -407,7 +424,7 @@ def fetch_top_songs_all():
         db.session.commit()
 
         return jsonify({
-            "message": f"Added {added_count} songs total.",
+            "message": f"Added {added_count} lyric videos total.",
             "incomplete_artists": incomplete_artists,
             "data": results_summary
         }), 200
