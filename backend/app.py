@@ -1,11 +1,11 @@
 from flask import Flask, jsonify, request, send_from_directory
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import current_app
+#from flask import current_app
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import yt_dlp
 import os
-import re
+#import re
 
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 CORS(app)
@@ -166,11 +166,6 @@ def add_song_auto():
         "link": link,
         "song_id": song.id
     }), 201
-
-import os
-from flask import jsonify
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import yt_dlp
 
 @app.route("/download_student_songs/<int:student_id>", methods=["GET"])
 def download_student_songs(student_id):
