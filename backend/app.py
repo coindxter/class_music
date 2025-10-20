@@ -194,8 +194,13 @@ def download_student_songs(student_id):
             ydl_opts = {
                 "outtmpl": output_path,
                 "format": "bestaudio/best",
-                "quiet": True,
+                "quiet": False,
                 "nocheckcertificate": True,
+                "retries": 5,
+                "fragment_retries": 5,
+                "socket_timeout": 30,
+                "concurrent_fragment_downloads": 1,
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36",
                 "postprocessors": [
                     {
                         "key": "FFmpegExtractAudio",
@@ -204,6 +209,7 @@ def download_student_songs(student_id):
                     }
                 ],
             }
+
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([song.link])
@@ -215,7 +221,8 @@ def download_student_songs(student_id):
             return {"title": song.title, "status": "failed", "error": str(e)}
 
     results = []
-    max_workers = min(5, len(songs))  # cap concurrency
+    workers = 3 # cap concurrency
+    max_workers = min(workers, len(songs))  
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_song = {executor.submit(download_song, song): song for song in songs}
         for future in as_completed(future_to_song):
