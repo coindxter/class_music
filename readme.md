@@ -19,3 +19,5 @@ cd ../backend
 python app.py
 
 http://localhost:5050
+
+[Notes](https://www.notion.so/GHENT-THING-28560bd3949080d48a9cf779fa7be68d?source=copy_link)
