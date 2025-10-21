@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 import yt_dlp
 import os
 #import re
+import threading
 
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 CORS(app)
@@ -167,8 +168,12 @@ def add_song_auto():
         "song_id": song.id
     }), 201
 
+
+
+
 @app.route("/download_student_songs/<int:student_id>", methods=["GET"])
 def download_student_songs(student_id):
+    delete_all_downloads()
     student = Student.query.get(student_id)
     if not student:
         return jsonify({"error": "Student not found"}), 404
@@ -180,22 +185,34 @@ def download_student_songs(student_id):
     download_dir = "downloads"
     os.makedirs(download_dir, exist_ok=True)
 
+    results = []
+    first_song_ready = threading.Event()
+    first_song_path = {"path": None}
+
     def download_song(song):
         try:
             safe_title = "".join(c for c in song.title if c.isalnum() or c in " _-").strip()
-            filename = f"{safe_title}.%(ext)s"
-            output_path = os.path.join(download_dir, filename)
+            output_path = os.path.join(download_dir, f"{safe_title}.%(ext)s")
 
             ydl_opts = {
                 "outtmpl": output_path,
                 "format": "bestaudio/best",
                 "quiet": False,
-                "nocheckcertificate": True,
                 "retries": 5,
                 "fragment_retries": 5,
                 "socket_timeout": 30,
-                "concurrent_fragment_downloads": 1,
-                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36",
+                "nocheckcertificate": True,
+                "user_agent": (
+                    "Mozilla/5.0 (Linux; Android 14; Pixel 7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/123.0.0.0 Mobile Safari/537.36"
+                ),
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android", "web_remix"],  # use mobile clients
+                        "skip": ["hls_manifest"]  # optional: skip broken HLS
+                    }
+                },
                 "postprocessors": [
                     {
                         "key": "FFmpegExtractAudio",
@@ -209,26 +226,35 @@ def download_student_songs(student_id):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([song.link])
 
-            print(f"Downloaded: {song.title}")
-            return {"title": song.title, "status": "success"}
+            final_path = os.path.join(download_dir, f"{safe_title}.mp3")
+
+            results.append({"title": song.title, "path": final_path, "status": "success"})
+
+            if not first_song_ready.is_set():
+                first_song_path["path"] = final_path
+                first_song_ready.set()
+
         except Exception as e:
             print(f"Failed to download {song.title}: {e}")
-            return {"title": song.title, "status": "failed", "error": str(e)}
+            results.append({"title": song.title, "status": "failed", "error": str(e)})
 
-    results = []
-    workers = 3 # cap concurrency
-    max_workers = min(workers, len(songs))  
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_song = {executor.submit(download_song, song): song for song in songs}
-        for future in as_completed(future_to_song):
-            result = future.result()
-            results.append(result)
+    def start_background_downloads():
+        workers = 3 # amount of workers
+        max_workers = min(workers, len(songs))  
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(download_song, s) for s in songs]
+            for f in as_completed(futures):
+                pass 
 
-    return jsonify({
-        "student": student.name,
-        "downloaded": [r for r in results if r["status"] == "success"],
-        "failed": [r for r in results if r["status"] == "failed"]
-    }), 200
+    threading.Thread(target=start_background_downloads).start()
+
+    if first_song_ready.wait(timeout=90):
+        return jsonify({
+            "message": "First song ready!",
+            "file": f"/downloads/{os.path.basename(first_song_path['path'])}"
+        }), 200
+    else:
+        return jsonify({"error": "No song finished in time"}), 504
 
 @app.route("/songs/<path:filename>")
 def serve_song(filename):
@@ -460,6 +486,22 @@ def list_songs():
         return jsonify({"songs": files})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/download_progress/<int:student_id>", methods=["GET"])
+def download_progress(student_id):
+    download_dir = "downloads"
+    if not os.path.exists(download_dir):
+        return jsonify([])
+
+    downloaded_files = []
+    for file in os.listdir(download_dir):
+        if file.endswith(".mp3"):
+            downloaded_files.append({
+                "title": os.path.splitext(file)[0],
+                "path": f"/downloads/{file}"
+            })
+
+    return jsonify(downloaded_files), 200
 
 if __name__ == "__main__":
     with app.app_context():

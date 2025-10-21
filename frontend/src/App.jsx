@@ -80,30 +80,7 @@ export default function App() {
     }
   };
 
-  /*comments are fun
-  /*
-  const handleDownloadStudent = async (studentId, studentName) => {
-    try {
-      await fetch(`${API_BASE}/delete/all_downloads`, { method: "DELETE" });
 
-      const response = await fetch(`${API_BASE}/download_student_songs/${studentId}`, {
-        method: "POST",
-      });
-      const data = await response.json();
-
-      if (response.ok) {
-        console.log(`✅ Downloaded ${studentName}'s playlist`);
-        setCurrentStudentName(studentName);
-        setRefreshTrigger(prev => prev + 1);  
-      } else {
-        console.error("Download failed:", data);
-      }
-    } catch (error) {
-      console.error("Error downloading student songs:", error);
-    }
-  };
-*/
-  
 function DownloadButton({ student, API_BASE, setCurrentStudentName, setRefreshTrigger }) {
   const [downloading, setDownloading] = React.useState(false);
 
@@ -111,9 +88,18 @@ function DownloadButton({ student, API_BASE, setCurrentStudentName, setRefreshTr
     e.stopPropagation();
     setDownloading(true);
     try {
-      await fetch(`${API_BASE}/download_student_songs/${student.id}`);
-      setCurrentStudentName(student.name);
-      setRefreshTrigger((prev) => prev + 1);
+      const res = await fetch(`${API_BASE}/download_student_songs/${student.id}`);
+      const data = await res.json();
+
+      if (res.ok && data.file) {
+        console.log(`🎵 First song ready: ${data.file}`);
+        setCurrentStudentName(student.name);
+        setRefreshTrigger((prev) => prev + 1);
+
+        localStorage.setItem("nowPlayingFile", `${API_BASE}${data.file}`);
+      } else {
+        console.error("Download error:", data);
+      }
     } catch (err) {
       console.error("Download failed", err);
     } finally {
@@ -121,13 +107,13 @@ function DownloadButton({ student, API_BASE, setCurrentStudentName, setRefreshTr
     }
   };
 
+
   return (
     <button
       onClick={handleDownload}
-      //disabled={downloading}
       style={{
         position: "relative",
-        width: "24px",          // ⬅️ Keeps button size fixed
+        width: "24px",          
         height: "24px",
         background: "none",
         border: "none",
