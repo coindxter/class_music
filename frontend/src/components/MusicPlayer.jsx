@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { io } from "socket.io-client";
 
 const API_BASE = "http://localhost:5050";
 
@@ -31,35 +32,47 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName, studen
         } else {
           console.warn("No song ready immediately:", data);
         }
-
-        pollDownloads();
       } catch (err) {
         console.error("Error starting downloads:", err);
       }
     };
 
     startDownload();
-  }, [refreshTrigger, studentId]);
 
-  const pollDownloads = () => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/download_progress/${studentId}`);
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const urls = data.map((song) => `${API_BASE}${song.path}`);
-          if (urls.length !== songs.length) {
-            console.log("✅ New song(s) detected:", urls);
-            setSongs(urls);
+    // 🧠 Connect to Flask WebSocket
+    const socket = io(API_BASE);
+
+    socket.on("connect", () => {
+      console.log("✅ Connected to Flask WebSocket");
+    });
+
+    socket.on("song_ready", (data) => {
+      if (data.student_id !== studentId) return; // Only handle events for this student
+      const songUrl = `${API_BASE}${data.path}`;
+      console.log("🎵 New song ready:", songUrl);
+
+      setSongs((prev) => {
+        if (prev.includes(songUrl)) return prev; // Avoid duplicates
+        return [...prev, songUrl];
+      });
+
+      // Autoplay the first available song
+      if (!isPlaying && songs.length === 0) {
+        setCurrentIndex(0);
+        setTimeout(() => {
+          if (audioRef.current) {
+            audioRef.current.play();
+            setIsPlaying(true);
           }
-        }
-      } catch (err) {
-        console.error("Polling error:", err);
+        }, 300);
       }
-    }, 5000); 
+    });
 
-    return () => clearInterval(interval);
-  };
+    return () => {
+      socket.disconnect();
+      console.log("🔌 WebSocket disconnected");
+    };
+  }, [refreshTrigger, studentId]);
 
   const handleTimeUpdate = () => {
     const audio = audioRef.current;
@@ -116,7 +129,7 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName, studen
       <div style={{ marginBottom: "10px", fontWeight: "bold" }}>
         {songs.length > 0
           ? decodeURIComponent(songs[currentIndex].split("/downloads/")[1])
-          : "Waiting for first song..."}
+          : "Waiting for songs..."}
       </div>
 
       {/* 🔵 Progress bar */}

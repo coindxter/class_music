@@ -1,26 +1,33 @@
 from flask import Flask, jsonify, request, send_from_directory
 from concurrent.futures import ThreadPoolExecutor, as_completed
-#from flask import current_app
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO
 import yt_dlp
 import os
-#import re
+import re
 import threading
 
+# -------------------- App / SocketIO / DB --------------------
+
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
+socketio = SocketIO(app, cors_allowed_origins="*")  # uses eventlet automatically when installed
 CORS(app)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-db_path = os.path.join(BASE_DIR, "classdj.db")
+PERSIST_DIR = os.path.join(BASE_DIR, "persistent")
+os.makedirs(PERSIST_DIR, exist_ok=True)
+
+db_path = os.path.join(PERSIST_DIR, "classdj.db")
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-DOWNLOAD_FOLDER = os.path.join(BASE_DIR, "downloads")
 
 DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 db = SQLAlchemy(app)
+
+# -------------------- Models --------------------
 
 class ClassPeriod(db.Model):
     __tablename__ = "class_periods"
@@ -49,7 +56,29 @@ class Song(db.Model):
     artist_id = db.Column(db.Integer, db.ForeignKey("artists.id"))
     file_path = db.Column(db.String(500), nullable=True)
 
-#================
+# -------------------- Helpers --------------------
+
+def sanitize_filename(title: str) -> str:
+    """
+    Remove/replace characters that cause path issues across OSs and
+    collapse whitespace. Also avoid unicode dashes that can be weird in paths.
+    """
+    t = title.replace("–", "-").replace("—", "-").strip()
+    t = re.sub(r'[\\/*?:"<>|]', "_", t)
+    t = re.sub(r"\s+", " ", t)
+    return t[:150]  # keep path length reasonable
+
+def clear_downloads_folder():
+    if os.path.exists(DOWNLOAD_DIR):
+        for filename in os.listdir(DOWNLOAD_DIR):
+            file_path = os.path.join(DOWNLOAD_DIR, filename)
+            if os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+
+# -------------------- Routes --------------------
 
 @app.route("/")
 def serve_react():
@@ -133,7 +162,7 @@ def add_song_auto():
     print(f"Searching YouTube for: {search_query}")
 
     ydl_opts = {
-        "nochecknocheckcertificate": True,
+        "nocheckcertificate": True,  # <-- fixed typo
         "quiet": True,
         "extract_flat": True,
         "skip_download": True,
@@ -150,7 +179,7 @@ def add_song_auto():
     if not entries:
         return jsonify({"error": "No search results found"}), 404
 
-    best = next((e for e in entries if "official" in e["title"].lower()), entries[0])
+    best = next((e for e in entries if "official" in e.get("title", "").lower()), entries[0])
     link = f"https://www.youtube.com/watch?v={best['id']}"
     song_title = best["title"]
 
@@ -168,9 +197,6 @@ def add_song_auto():
         "song_id": song.id
     }), 201
 
-
-
-
 @app.route("/download_student_songs/<int:student_id>", methods=["GET"])
 def download_student_songs(student_id):
     delete_all_downloads()
@@ -182,72 +208,84 @@ def download_student_songs(student_id):
     if not songs:
         return jsonify({"message": "No songs to download for this student."}), 200
 
-    download_dir = "downloads"
-    os.makedirs(download_dir, exist_ok=True)
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     results = []
     first_song_ready = threading.Event()
     first_song_path = {"path": None}
 
     def download_song(song):
-        try:
-            safe_title = "".join(c for c in song.title if c.isalnum() or c in " _-").strip()
-            output_path = os.path.join(download_dir, f"{safe_title}.%(ext)s")
+        with app.app_context():
+            try:
+                ydl_opts = {
+                    "paths": {"home": DOWNLOAD_DIR},  # yt-dlp decides filenames
+                    "format": "bestaudio/best",
+                    "quiet": False,
+                    "retries": 5,
+                    "fragment_retries": 5,
+                    "socket_timeout": 30,
+                    "nocheckcertificate": True,
+                    "user_agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/123.0.0.0 Safari/537.36"
+                    ),
+                    "extractor_args": {
+                        "youtube": {
+                            "player_client": ["web_remix"],
+                            "skip": ["hls_manifest", "dash_manifest"]
+                        }
+                    },
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "mp3",
+                            "preferredquality": "192",
+                        }
+                    ],
+                }
 
-            ydl_opts = {
-                "outtmpl": output_path,
-                "format": "bestaudio/best",
-                "quiet": False,
-                "retries": 5,
-                "fragment_retries": 5,
-                "socket_timeout": 30,
-                "nocheckcertificate": True,
-                "user_agent": (
-                    "Mozilla/5.0 (Linux; Android 14; Pixel 7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/123.0.0.0 Mobile Safari/537.36"
-                ),
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android", "web_remix"],  # use mobile clients
-                        "skip": ["hls_manifest"]  # optional: skip broken HLS
-                    }
-                },
-                "postprocessors": [
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([song.link])
+
+                # find the latest downloaded file
+                latest_file = max(
+                    [os.path.join(DOWNLOAD_DIR, f) for f in os.listdir(DOWNLOAD_DIR)],
+                    key=os.path.getctime,
+                )
+
+                results.append({"title": song.title, "path": latest_file, "status": "success"})
+
+                # notify frontend immediately
+                socketio.emit(
+                    "song_ready",
                     {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                        "preferredquality": "192",
-                    }
-                ],
-            }
+                        "title": song.title,
+                        "path": f"/downloads/{os.path.basename(latest_file)}",
+                        "student_id": song.artist.student_id,
+                    },
+                )
 
+                # mark first song ready
+                if not first_song_ready.is_set():
+                    first_song_path["path"] = latest_file
+                    first_song_ready.set()
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([song.link])
-
-            final_path = os.path.join(download_dir, f"{safe_title}.mp3")
-
-            results.append({"title": song.title, "path": final_path, "status": "success"})
-
-            if not first_song_ready.is_set():
-                first_song_path["path"] = final_path
-                first_song_ready.set()
-
-        except Exception as e:
-            print(f"Failed to download {song.title}: {e}")
-            results.append({"title": song.title, "status": "failed", "error": str(e)})
+            except Exception as e:
+                print(f"Failed to download {song.title}: {e}")
+                results.append({"title": song.title, "status": "failed", "error": str(e)})
 
     def start_background_downloads():
-        workers = 3 # amount of workers
-        max_workers = min(workers, len(songs))  
+        workers = 1  # concurrent downloads
+        max_workers = min(workers, len(songs))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(download_song, s) for s in songs]
-            for f in as_completed(futures):
-                pass 
+            for _ in as_completed(futures):
+                pass
 
-    threading.Thread(target=start_background_downloads).start()
+    threading.Thread(target=start_background_downloads, daemon=True).start()
 
+    # wait up to 90 seconds for first song
     if first_song_ready.wait(timeout=90):
         return jsonify({
             "message": "First song ready!",
@@ -344,19 +382,13 @@ def delete_song(song_id):
 @app.route("/delete/all", methods=["DELETE"])
 def delete_all():
     try:
-        for filename in os.listdir(DOWNLOAD_DIR):
-            file_path = os.path.join(DOWNLOAD_DIR, filename)
-            if os.path.isfile(file_path):
-                os.remove(file_path)
-
+        clear_downloads_folder()
         Song.query.delete()
         Artist.query.delete()
         Student.query.delete()
         ClassPeriod.query.delete()
         db.session.commit()
-
         return jsonify({"message": "All data and files deleted successfully!"}), 200
-
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -364,11 +396,7 @@ def delete_all():
 @app.route("/delete/all_downloads", methods=["DELETE"])
 def delete_all_downloads():
     try:
-        if os.path.exists(DOWNLOAD_DIR):
-            for filename in os.listdir(DOWNLOAD_DIR):
-                file_path = os.path.join(DOWNLOAD_DIR, filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
+        clear_downloads_folder()
         return jsonify({"message": "All downloads cleared"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -474,36 +502,32 @@ def not_found(e):
 
 @app.route("/downloads/<path:filename>")
 def serve_download(filename):
-    return send_from_directory(DOWNLOAD_FOLDER, filename)
+    return send_from_directory(DOWNLOAD_DIR, filename)
 
 @app.route("/list_songs")
 def list_songs():
     try:
-        files = [
-            f for f in os.listdir(DOWNLOAD_FOLDER)
-            if f.lower().endswith(".mp3")
-        ]
+        files = [f for f in os.listdir(DOWNLOAD_DIR) if f.lower().endswith(".mp3")]
         return jsonify({"songs": files})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/download_progress/<int:student_id>", methods=["GET"])
 def download_progress(student_id):
-    download_dir = "downloads"
-    if not os.path.exists(download_dir):
+    if not os.path.exists(DOWNLOAD_DIR):
         return jsonify([])
-
     downloaded_files = []
-    for file in os.listdir(download_dir):
+    for file in os.listdir(DOWNLOAD_DIR):
         if file.endswith(".mp3"):
             downloaded_files.append({
                 "title": os.path.splitext(file)[0],
                 "path": f"/downloads/{file}"
             })
-
     return jsonify(downloaded_files), 200
+
+# -------------------- Main --------------------
 
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(host="0.0.0.0", port=5050, debug=True)
+    socketio.run(app, host="0.0.0.0", port=5050, debug=True, use_reloader=False)
