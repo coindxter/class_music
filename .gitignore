@@ -22,3 +22,4 @@ backend/downloads/
 *.db
 node_modules/
 persistent/
+.vscode/

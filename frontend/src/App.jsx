@@ -11,7 +11,7 @@ export default function App() {
   const [expandedClasses, setExpandedClasses] = useState({});
   const [expandedStudents, setExpandedStudents] = useState({});
   const [expandedArtists, setExpandedArtists] = useState({});
-  const [pendingDelete, setPendingDelete] = useState(null);
+  //const [pendingDelete, setPendingDelete] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
   const [fetchMessage, setFetchMessage] = useState("");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -84,28 +84,25 @@ export default function App() {
 function DownloadButton({ student, API_BASE, setCurrentStudentName, setRefreshTrigger }) {
   const [downloading, setDownloading] = React.useState(false);
 
-  const handleDownload = async (e) => {
-    e.stopPropagation();
-    setDownloading(true);
-    try {
-      const res = await fetch(`${API_BASE}/download_student_songs/${student.id}`);
-      const data = await res.json();
+const handleDownload = async (e) => {
+  e.stopPropagation();
+  setDownloading(true);
 
-      if (res.ok && data.file) {
-        console.log(`🎵 First song ready: ${data.file}`);
-        setCurrentStudentName(student.name);
-        setRefreshTrigger((prev) => prev + 1);
+  try {
+    const res = await fetch(`${API_BASE}/download_student_songs/${student.id}`);
 
-        localStorage.setItem("nowPlayingFile", `${API_BASE}${data.file}`);
-      } else {
-        console.error("Download error:", data);
-      }
-    } catch (err) {
-      console.error("Download failed", err);
-    } finally {
-      setDownloading(false);
-    }
-  };
+    const data = await res.json();
+    console.log("Download result:", data);
+
+    setRefreshTrigger((prev) => prev + 1);
+
+  } catch (err) {
+    console.error("Download failed", err);
+  } finally {
+    setDownloading(false);
+  }
+};
+
 
 
   return (

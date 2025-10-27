@@ -1,78 +1,47 @@
 import React, { useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
 
 const API_BASE = "http://localhost:5050";
 
-export default function MusicPlayer({ refreshTrigger, currentStudentName, studentId = 1 }) {
+export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
   const [songs, setSongs] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const audioRef = useRef(null);
 
+  // ✅ Only loads existing songs on refresh or after download button pressed
   useEffect(() => {
-    const startDownload = async () => {
+    const loadSongs = async () => {
       try {
-        console.log("Starting song downloads for student:", studentId);
-        const res = await fetch(`${API_BASE}/download_student_songs/${studentId}`);
+        const res = await fetch(`${API_BASE}/list_songs`);
         const data = await res.json();
 
-        if (data.file) {
-          const firstSongUrl = `${API_BASE}${data.file}`;
-          console.log("First song ready:", firstSongUrl);
-          setSongs([firstSongUrl]);
-          setCurrentIndex(0);
+        if (res.ok && Array.isArray(data.songs)) {
+          const urls = data.songs.map(
+            (f) => `${API_BASE}/songs/${encodeURIComponent(f)}`
+          );
 
-          setTimeout(() => {
-            if (audioRef.current) {
-              audioRef.current.play();
-              setIsPlaying(true);
-            }
-          }, 300);
-        } else {
-          console.warn("No song ready immediately:", data);
+          const hadSongsBefore = songs.length > 0;
+          setSongs(urls);
+
+          // ✅ NEW AUTOMATIC PLAY ONLY WHEN NEW SONGS ARRIVE
+          if (!hadSongsBefore && urls.length > 0) {
+            setCurrentIndex(0);
+            setTimeout(() => {
+              if (audioRef.current) {
+                audioRef.current.play();
+                setIsPlaying(true);
+              }
+            }, 200);
+          }
         }
       } catch (err) {
-        console.error("Error starting downloads:", err);
+        console.error("Error loading songs:", err);
       }
     };
 
-    startDownload();
-
-    // 🧠 Connect to Flask WebSocket
-    const socket = io(API_BASE);
-
-    socket.on("connect", () => {
-      console.log("✅ Connected to Flask WebSocket");
-    });
-
-    socket.on("song_ready", (data) => {
-      if (data.student_id !== studentId) return; // Only handle events for this student
-      const songUrl = `${API_BASE}${data.path}`;
-      console.log("🎵 New song ready:", songUrl);
-
-      setSongs((prev) => {
-        if (prev.includes(songUrl)) return prev; // Avoid duplicates
-        return [...prev, songUrl];
-      });
-
-      // Autoplay the first available song
-      if (!isPlaying && songs.length === 0) {
-        setCurrentIndex(0);
-        setTimeout(() => {
-          if (audioRef.current) {
-            audioRef.current.play();
-            setIsPlaying(true);
-          }
-        }, 300);
-      }
-    });
-
-    return () => {
-      socket.disconnect();
-      console.log("🔌 WebSocket disconnected");
-    };
-  }, [refreshTrigger, studentId]);
+    loadSongs();
+  }, [refreshTrigger]);
 
   const handleTimeUpdate = () => {
     const audio = audioRef.current;
@@ -125,14 +94,13 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName, studen
         boxShadow: "0 4px 10px rgba(0,0,0,0.4)",
       }}
     >
-      {/* 🎶 Song filename display */}
       <div style={{ marginBottom: "10px", fontWeight: "bold" }}>
         {songs.length > 0
           ? decodeURIComponent(songs[currentIndex].split("/downloads/")[1])
-          : "Waiting for songs..."}
+          : "No downloaded songs yet"}
       </div>
 
-      {/* 🔵 Progress bar */}
+      {/* Progress bar */}
       <div
         style={{
           width: "100%",
@@ -153,14 +121,19 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName, studen
         />
       </div>
 
-      {/* ⏯️ Controls */}
+      {/* Controls */}
       <div style={{ display: "flex", justifyContent: "center", gap: "20px" }}>
-        <button onClick={prevSong}>⏮️</button>
-        <button onClick={togglePlay}>{isPlaying ? "⏸️" : "▶️"}</button>
-        <button onClick={nextSong}>⏭️</button>
+        <button onClick={prevSong} disabled={songs.length === 0}>
+          ⏮️
+        </button>
+        <button onClick={togglePlay} disabled={songs.length === 0}>
+          {isPlaying ? "⏸️" : "▶️"}
+        </button>
+        <button onClick={nextSong} disabled={songs.length === 0}>
+          ⏭️
+        </button>
       </div>
 
-      {/* Now Playing */}
       {currentStudentName && (
         <div
           style={{
@@ -179,7 +152,6 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName, studen
         src={songs[currentIndex] || ""}
         onTimeUpdate={handleTimeUpdate}
         onEnded={nextSong}
-        autoPlay={isPlaying}
         preload="auto"
       />
     </div>

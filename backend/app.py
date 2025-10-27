@@ -7,11 +7,14 @@ import yt_dlp
 import os
 import re
 import threading
+import requests
+from sqlalchemy.orm import scoped_session, sessionmaker
+
 
 # -------------------- App / SocketIO / DB --------------------
 
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
-socketio = SocketIO(app, cors_allowed_origins="*")  # uses eventlet automatically when installed
+socketio = SocketIO(app, cors_allowed_origins="*")  
 CORS(app)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -58,25 +61,29 @@ class Song(db.Model):
 
 # -------------------- Helpers --------------------
 
-def sanitize_filename(title: str) -> str:
-    """
-    Remove/replace characters that cause path issues across OSs and
-    collapse whitespace. Also avoid unicode dashes that can be weird in paths.
-    """
-    t = title.replace("–", "-").replace("—", "-").strip()
-    t = re.sub(r'[\\/*?:"<>|]', "_", t)
-    t = re.sub(r"\s+", " ", t)
-    return t[:150]  # keep path length reasonable
+#this works
 
-def clear_downloads_folder():
-    if os.path.exists(DOWNLOAD_DIR):
-        for filename in os.listdir(DOWNLOAD_DIR):
-            file_path = os.path.join(DOWNLOAD_DIR, filename)
-            if os.path.isfile(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
+def get_soundcloud_client_id():
+
+    resp = requests.get("https://soundcloud.com/", timeout=10)
+    resp.raise_for_status()
+    js_urls = re.findall(r'src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"', resp.text)
+    if not js_urls:
+        raise RuntimeError("No SoundCloud asset JS URLs found on homepage")
+
+    for url in js_urls:
+        js = requests.get(url, timeout=10).text
+        m = re.search(r'client_id\s*:\s*"([a-zA-Z0-9]{32})"', js)
+        if m:
+            return m.group(1)
+        m2 = re.search(r'client_id"\s*:\s*"([a-zA-Z0-9]{32})"', js)
+        if m2:
+            return m2.group(1)
+
+    raise RuntimeError("Could not extract SoundCloud client_id from JS")
+
+
+
 
 # -------------------- Routes --------------------
 
@@ -144,6 +151,9 @@ def get_classes_full():
         result.append(class_data)
     return jsonify(result)
 
+# -----------------------------------------------
+
+#change to download from soundcloud
 @app.route("/add_song_auto", methods=["POST"])
 def add_song_auto():
     data = request.get_json()
@@ -162,7 +172,7 @@ def add_song_auto():
     print(f"Searching YouTube for: {search_query}")
 
     ydl_opts = {
-        "nocheckcertificate": True,  # <-- fixed typo
+        "nocheckcertificate": True,  
         "quiet": True,
         "extract_flat": True,
         "skip_download": True,
@@ -197,102 +207,9 @@ def add_song_auto():
         "song_id": song.id
     }), 201
 
-@app.route("/download_student_songs/<int:student_id>", methods=["GET"])
-def download_student_songs(student_id):
-    delete_all_downloads()
-    student = Student.query.get(student_id)
-    if not student:
-        return jsonify({"error": "Student not found"}), 404
 
-    songs = Song.query.join(Artist).filter(Artist.student_id == student_id).all()
-    if not songs:
-        return jsonify({"message": "No songs to download for this student."}), 200
+# -----------------------------------------------
 
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-    results = []
-    first_song_ready = threading.Event()
-    first_song_path = {"path": None}
-
-    def download_song(song):
-        with app.app_context():
-            try:
-                ydl_opts = {
-                    "paths": {"home": DOWNLOAD_DIR},  # yt-dlp decides filenames
-                    "format": "bestaudio/best",
-                    "quiet": False,
-                    "retries": 5,
-                    "fragment_retries": 5,
-                    "socket_timeout": 30,
-                    "nocheckcertificate": True,
-                    "user_agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/123.0.0.0 Safari/537.36"
-                    ),
-                    "extractor_args": {
-                        "youtube": {
-                            "player_client": ["web_remix"],
-                            "skip": ["hls_manifest", "dash_manifest"]
-                        }
-                    },
-                    "postprocessors": [
-                        {
-                            "key": "FFmpegExtractAudio",
-                            "preferredcodec": "mp3",
-                            "preferredquality": "192",
-                        }
-                    ],
-                }
-
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([song.link])
-
-                # find the latest downloaded file
-                latest_file = max(
-                    [os.path.join(DOWNLOAD_DIR, f) for f in os.listdir(DOWNLOAD_DIR)],
-                    key=os.path.getctime,
-                )
-
-                results.append({"title": song.title, "path": latest_file, "status": "success"})
-
-                # notify frontend immediately
-                socketio.emit(
-                    "song_ready",
-                    {
-                        "title": song.title,
-                        "path": f"/downloads/{os.path.basename(latest_file)}",
-                        "student_id": song.artist.student_id,
-                    },
-                )
-
-                # mark first song ready
-                if not first_song_ready.is_set():
-                    first_song_path["path"] = latest_file
-                    first_song_ready.set()
-
-            except Exception as e:
-                print(f"Failed to download {song.title}: {e}")
-                results.append({"title": song.title, "status": "failed", "error": str(e)})
-
-    def start_background_downloads():
-        workers = 1  # concurrent downloads
-        max_workers = min(workers, len(songs))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(download_song, s) for s in songs]
-            for _ in as_completed(futures):
-                pass
-
-    threading.Thread(target=start_background_downloads, daemon=True).start()
-
-    # wait up to 90 seconds for first song
-    if first_song_ready.wait(timeout=90):
-        return jsonify({
-            "message": "First song ready!",
-            "file": f"/downloads/{os.path.basename(first_song_path['path'])}"
-        }), 200
-    else:
-        return jsonify({"error": "No song finished in time"}), 504
 
 @app.route("/songs/<path:filename>")
 def serve_song(filename):
@@ -300,6 +217,9 @@ def serve_song(filename):
         return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=False)
     except FileNotFoundError:
         return jsonify({"error": "File not found"}), 404
+
+# ---------------- Delete ------------------------
+
 
 @app.route("/delete/class/<int:class_id>", methods=["DELETE"])
 def delete_class(class_id):
@@ -317,7 +237,7 @@ def delete_class(class_id):
 
     db.session.delete(class_item)
     db.session.commit()
-    return jsonify({"message": "Class and associated files deleted successfully"}), 200
+    return jsonify({"message": f"Class {class_item.name} and all related files deleted successfully"}), 200
 
 @app.route("/delete/student/<int:student_id>", methods=["DELETE"])
 def delete_student(student_id):
@@ -334,7 +254,7 @@ def delete_student(student_id):
 
     db.session.delete(student)
     db.session.commit()
-    return jsonify({"message": "Student and associated files deleted successfully"}), 200
+    return jsonify({"message": f"Student {student.name} and related files deleted successfully"}), 200
 
 @app.route("/delete/artist/<int:artist_id>", methods=["DELETE"])
 def delete_artist(artist_id):
@@ -350,45 +270,42 @@ def delete_artist(artist_id):
 
     db.session.delete(artist)
     db.session.commit()
-    return jsonify({"message": "Artist and associated files deleted successfully"}), 200
+    return jsonify({"message": f"Artist {artist.name} and all related files deleted successfully"}), 200
 
 @app.route("/delete/song/<int:song_id>", methods=["DELETE"])
 def delete_song(song_id):
     song = Song.query.get(song_id)
     if not song:
-        print(f"[DELETE SONG] Song with ID {song_id} not found.")
         return jsonify({"error": "Song not found"}), 404
 
     if song.file_path:
         file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
-        print(f"[DELETE SONG] Deleting file: {file_path}")
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
-                print(f"[DELETE SONG] File deleted successfully.")
             except Exception as e:
-                print(f"[DELETE SONG] Error deleting file: {e}")
-        else:
-            print(f"[DELETE SONG] File does not exist at path: {file_path}")
-    else:
-        print(f"[DELETE SONG] No file_path stored for song {song_id}")
+                print(f"Error deleting file {file_path}: {e}")
 
     db.session.delete(song)
     db.session.commit()
-    print(f"[DELETE SONG] DB entry deleted for song {song_id}")
-
-    return jsonify({"message": "Song and file deleted successfully"}), 200
+    return jsonify({"message": f"Song '{song.title}' and file deleted successfully"}), 200
 
 @app.route("/delete/all", methods=["DELETE"])
 def delete_all():
     try:
-        clear_downloads_folder()
+        for f in os.listdir(DOWNLOAD_DIR):
+            path = os.path.join(DOWNLOAD_DIR, f)
+            if os.path.isfile(path):
+                os.remove(path)
+
         Song.query.delete()
         Artist.query.delete()
         Student.query.delete()
         ClassPeriod.query.delete()
         db.session.commit()
+
         return jsonify({"message": "All data and files deleted successfully!"}), 200
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -396,97 +313,159 @@ def delete_all():
 @app.route("/delete/all_downloads", methods=["DELETE"])
 def delete_all_downloads():
     try:
-        clear_downloads_folder()
-        return jsonify({"message": "All downloads cleared"}), 200
+        deleted_files = 0
+        for f in os.listdir(DOWNLOAD_DIR):
+            path = os.path.join(DOWNLOAD_DIR, f)
+            if os.path.isfile(path):
+                os.remove(path)
+                deleted_files += 1
+
+        return jsonify({"message": f"All downloads cleared ({deleted_files} files deleted)."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+# ----------------- Button Functons -----------------
+
+@app.route("/download_student_songs/<int:student_id>", methods=["GET"])
+@app.route("/download_student_songs/<int:student_id>", methods=["GET"])
+def download_student_songs(student_id):
+    print(f"Starting downloads for student {student_id}")
+
+    songs = (
+        Song.query.join(Artist)
+        .filter(Artist.student_id == student_id)
+        .filter(Song.file_path.is_(None))
+        .all()
+    )
+
+    if not songs:
+        return jsonify({"message": "No songs to download"}), 200
+
+    socketio.emit("download_start", {"total": len(songs)})
+    downloaded = 0
+    failed = []
+
+    def download_single(song):
+        title = song.title
+        link = song.link
+
+        try:
+            socketio.emit("download_status", {"song": title, "status": "starting"})
+
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s-%(id)s.%(ext)s"),
+                "quiet": True,
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }],
+            }
+
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                result = ydl.extract_info(link, download=True)
+                filename = os.path.splitext(ydl.prepare_filename(result))[0] + ".mp3"
+
+
+            if filename:
+                song.file_path = os.path.basename(filename)
+                db.session.commit()
+
+            socketio.emit("download_status", {"song": title, "status": "done"})
+            return (title, True)
+
+        except Exception as e:
+            socketio.emit("download_status", {"song": title, "status": "failed", "error": str(e)})
+            return (title, False)
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(download_single, s): s for s in songs}
+
+        for i, future in enumerate(as_completed(futures), start=1):
+            title, success = future.result()
+            if success:
+                downloaded += 1
+            else:
+                failed.append(title)
+
+            socketio.emit("download_progress", {
+                "current": i,
+                "total": len(songs),
+                "last_song": title
+            })
+
+    socketio.emit("download_complete", {
+        "downloaded": downloaded,
+        "failed": failed
+    })
+
+    return jsonify({
+        "message": f"Downloaded {downloaded} songs",
+        "failed": failed
+    }), 200
+
+
+
+
+
 
 @app.route("/fetch_top_songs_all", methods=["GET"])
 def fetch_top_songs_all():
     try:
+        client_id = get_soundcloud_client_id()
+        #print(f"Using SoundCloud client_id: {client_id[:6]}...")
+
         artists = Artist.query.all()
         added_count = 0
         results_summary = {}
         incomplete_artists = []
 
-        base_opts = {
-            "nocheckcertificate": True,
-            "quiet": True,
-            "extract_flat": True,
-            "skip_download": True,
-            "default_search": None,
-            "source_address": "0.0.0.0"
-        }
-
         for artist in artists:
             artist_name = artist.name
-            print(f"\nSearching top songs for: {artist_name}")
+            #print(f"\nFetching top SoundCloud tracks for: {artist_name}")
 
-            top_query = f"ytsearch5:{artist_name} official music video"
+            search_url = (
+                f"https://api-v2.soundcloud.com/search/tracks"
+                f"?q={artist_name}&client_id={client_id}&limit=5"
+            )
+
             try:
-                with yt_dlp.YoutubeDL(base_opts) as ydl:
-                    info = ydl.extract_info(top_query, download=False)
-                    entries = info.get("entries", [])
+                res = requests.get(search_url)
+                data = res.json()
+                tracks = data.get("collection", [])
             except Exception as e:
-                print(f"yt-dlp search failed for {artist_name}: {e}")
-                continue
-
-            if not entries:
-                print(f"No search results found for {artist_name}")
+                print(f"API failed for {artist_name}: {e}")
                 incomplete_artists.append(artist_name)
                 continue
 
-            top_titles = []
-            for entry in entries:
-                title = entry.get("title")
-                if title:
-                    top_titles.append(title)
-
-            if not top_titles:
+            if not tracks:
+                print(f"No tracks found for {artist_name}")
                 incomplete_artists.append(artist_name)
                 continue
 
             valid_songs = []
-
-            for song_title in top_titles[:5]:
-                lyric_query = f"ytsearch1:{artist_name} {song_title} lyrics"
-                try:
-                    with yt_dlp.YoutubeDL(base_opts) as ydl:
-                        lyric_info = ydl.extract_info(lyric_query, download=False)
-                        lyric_entries = lyric_info.get("entries", [])
-                except Exception as e:
-                    print(f"Lyric search failed for {song_title}: {e}")
+            for t in tracks:
+                title = t.get("title")
+                url = t.get("permalink_url")
+                if not title or not url:
                     continue
 
-                if not lyric_entries:
-                    print(f"No lyric video found for {song_title}")
-                    continue
-
-                lyric_entry = lyric_entries[0]
-                lyric_title = lyric_entry.get("title")
-                lyric_video_id = lyric_entry.get("id")
-
-                if lyric_title and lyric_video_id:
-                    link = f"https://www.youtube.com/watch?v={lyric_video_id}"
-                    valid_songs.append({"title": lyric_title, "link": link})
-                    print(f"Matched lyric video: {lyric_title}")
-
-            if not valid_songs:
-                incomplete_artists.append(artist_name)
-                continue
+                valid_songs.append({"title": title, "link": url})
+                existing = Song.query.filter_by(title=title, artist_id=artist.id).first()
+                if not existing:
+                    db.session.add(Song(title=title, link=url, artist_id=artist.id))
+                    added_count += 1
 
             results_summary[artist_name] = valid_songs
 
-            for vid in valid_songs:
-                existing = Song.query.filter_by(title=vid["title"], artist_id=artist.id).first()
-                if not existing:
-                    db.session.add(Song(title=vid["title"], link=vid["link"], artist_id=artist.id))
-                    added_count += 1
-
         db.session.commit()
-
         return jsonify({
-            "message": f"Added {added_count} lyric videos total.",
+            "message": f"Added {added_count} SoundCloud songs total.",
             "incomplete_artists": incomplete_artists,
             "data": results_summary
         }), 200
