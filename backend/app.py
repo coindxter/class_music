@@ -28,6 +28,8 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
+
 db = SQLAlchemy(app)
 
 # -------------------- Models --------------------
@@ -61,29 +63,40 @@ class Song(db.Model):
 
 # -------------------- Helpers --------------------
 
-#this works
+def get_lastfm_top_tracks(artist_name, limit=5):
+    url = "http://ws.audioscrobbler.com/2.0/"
+    params = {
+        "method": "artist.gettoptracks",
+        "artist": artist_name,
+        "api_key": LASTFM_API_KEY,
+        "format": "json",
+        "limit": limit
+    }
+    res = requests.get(url, params=params).json()
+    tracks = res.get("toptracks", {}).get("track", [])
+    return [t["name"] for t in tracks]
 
-def get_soundcloud_client_id():
+def search_youtube(query, max_results=5):
+    ydl_opts = {
+        "quiet": True,
+        "extract_flat": "in_playlist",
+        "default_search": "ytsearch",
+        "noplaylist": True
+    }
 
-    resp = requests.get("https://soundcloud.com/", timeout=10)
-    resp.raise_for_status()
-    js_urls = re.findall(r'src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"', resp.text)
-    if not js_urls:
-        raise RuntimeError("No SoundCloud asset JS URLs found on homepage")
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
+            entries = info.get("entries", [])
 
-    for url in js_urls:
-        js = requests.get(url, timeout=10).text
-        m = re.search(r'client_id\s*:\s*"([a-zA-Z0-9]{32})"', js)
-        if m:
-            return m.group(1)
-        m2 = re.search(r'client_id"\s*:\s*"([a-zA-Z0-9]{32})"', js)
-        if m2:
-            return m2.group(1)
+        for e in entries:
+            if "id" in e:
+                return f"https://www.youtube.com/watch?v={e['id']}"
+        return None
 
-    raise RuntimeError("Could not extract SoundCloud client_id from JS")
-
-
-
+    except Exception as e:
+        print("YouTube search failed:", e)
+        return None
 
 # -------------------- Routes --------------------
 
@@ -151,61 +164,10 @@ def get_classes_full():
         result.append(class_data)
     return jsonify(result)
 
-# -----------------------------------------------
 
-#change to download from soundcloud
-@app.route("/add_song_auto", methods=["POST"])
-def add_song_auto():
-    data = request.get_json()
-    title = data.get("title")
-    artist_id = data.get("artist_id")
-
-    if not title or not artist_id:
-        return jsonify({"error": "Missing title or artist_id"}), 400
-
-    artist = Artist.query.get(artist_id)
-    if not artist:
-        return jsonify({"error": "Artist not found"}), 404
-
-    artist_name = artist.name
-    search_query = f"{artist_name} {title} official music video"
-    print(f"Searching YouTube for: {search_query}")
-
-    ydl_opts = {
-        "nocheckcertificate": True,  
-        "quiet": True,
-        "extract_flat": True,
-        "skip_download": True,
-        "default_search": "ytsearch5"
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(search_query, download=False)
-            entries = info.get("entries", [])
-    except Exception as e:
-        return jsonify({"error": f"Search failed: {e}"}), 500
-
-    if not entries:
-        return jsonify({"error": "No search results found"}), 404
-
-    best = next((e for e in entries if "official" in e.get("title", "").lower()), entries[0])
-    link = f"https://www.youtube.com/watch?v={best['id']}"
-    song_title = best["title"]
-
-    existing = Song.query.filter_by(title=song_title, artist_id=artist_id).first()
-    if existing:
-        return jsonify({"message": "Song already exists.", "song_id": existing.id}), 200
-
-    song = Song(title=song_title, link=link, artist_id=artist_id)
-    db.session.add(song)
-    db.session.commit()
-
-    return jsonify({
-        "message": f"Added '{song_title}' for {artist_name}.",
-        "link": link,
-        "song_id": song.id
-    }), 201
+# add a way to individually add songs
+#@app.route("/add_song", methods=["POST"])
+#def add_song_auto():
 
 
 # -----------------------------------------------
@@ -329,7 +291,6 @@ def delete_all_downloads():
 # ----------------- Button Functons -----------------
 
 @app.route("/download_student_songs/<int:student_id>", methods=["GET"])
-@app.route("/download_student_songs/<int:student_id>", methods=["GET"])
 def download_student_songs(student_id):
     print(f"Starting downloads for student {student_id}")
 
@@ -410,70 +371,63 @@ def download_student_songs(student_id):
     }), 200
 
 
-
-
-
-
 @app.route("/fetch_top_songs_all", methods=["GET"])
 def fetch_top_songs_all():
-    try:
-        client_id = get_soundcloud_client_id()
-        #print(f"Using SoundCloud client_id: {client_id[:6]}...")
 
+    try:
         artists = Artist.query.all()
         added_count = 0
-        results_summary = {}
-        incomplete_artists = []
+        results = {}
+        missing_youtube = []
 
         for artist in artists:
-            artist_name = artist.name
-            #print(f"\nFetching top SoundCloud tracks for: {artist_name}")
+            top_tracks = get_lastfm_top_tracks(artist.name, limit=5)
 
-            search_url = (
-                f"https://api-v2.soundcloud.com/search/tracks"
-                f"?q={artist_name}&client_id={client_id}&limit=5"
-            )
-
-            try:
-                res = requests.get(search_url)
-                data = res.json()
-                tracks = data.get("collection", [])
-            except Exception as e:
-                print(f"API failed for {artist_name}: {e}")
-                incomplete_artists.append(artist_name)
+            if not top_tracks:
+                results[artist.name] = "No top tracks found"
                 continue
 
-            if not tracks:
-                print(f"No tracks found for {artist_name}")
-                incomplete_artists.append(artist_name)
-                continue
+            results[artist.name] = []
 
-            valid_songs = []
-            for t in tracks:
-                title = t.get("title")
-                url = t.get("permalink_url")
-                if not title or not url:
+            for title in top_tracks:
+                existing = Song.query.filter_by(title=title, artist_id=artist.id).first()
+                if existing:
+                    results[artist.name].append({"title": title, "status": "exists"})
                     continue
 
-                valid_songs.append({"title": title, "link": url})
-                existing = Song.query.filter_by(title=title, artist_id=artist.id).first()
-                if not existing:
-                    db.session.add(Song(title=title, link=url, artist_id=artist.id))
-                    added_count += 1
+                yt_query = f"{artist.name} {title} official music video"
+                yt_link = search_youtube(yt_query)
 
-            results_summary[artist_name] = valid_songs
+                if not yt_link:
+                    missing_youtube.append(f"{artist.name} - {title}")
+
+                new_song = Song(
+                    title=title,
+                    link=yt_link,
+                    artist_id=artist.id
+                )
+                db.session.add(new_song)
+                added_count += 1
+
+                results[artist.name].append({
+                    "title": title,
+                    "youtube": yt_link,
+                    "status": "added" if yt_link else "no_youtube"
+                })
 
         db.session.commit()
+
         return jsonify({
-            "message": f"Added {added_count} SoundCloud songs total.",
-            "incomplete_artists": incomplete_artists,
-            "data": results_summary
+            "message": f"Added {added_count} YouTube songs from Last.fm discovery",
+            "youtube_missing": missing_youtube,
+            "data": results
         }), 200
 
     except Exception as e:
         db.session.rollback()
-        print("Error fetching songs:", e)
+        print("Fetch error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 @app.errorhandler(404)
 def not_found(e):

@@ -38,4 +38,4 @@ urllib3==2.5.0
 websockets==15.0.1
 Werkzeug==3.1.3
 wsproto==1.2.0
-yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz#sha256=a34daeaaf71a969e302cd9b86214a8610af867ff971604125d5ddae1599961b2
+yt-dlp==2025.10.22
