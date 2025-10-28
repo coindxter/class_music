@@ -9,7 +9,6 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
   const [progress, setProgress] = useState(0);
   const audioRef = useRef(null);
 
-  // ✅ Only loads existing songs on refresh or after download button pressed
   useEffect(() => {
     const loadSongs = async () => {
       try {
@@ -24,7 +23,6 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
           const hadSongsBefore = songs.length > 0;
           setSongs(urls);
 
-          // ✅ NEW AUTOMATIC PLAY ONLY WHEN NEW SONGS ARRIVE
           if (!hadSongsBefore && urls.length > 0) {
             setCurrentIndex(0);
             setTimeout(() => {
@@ -83,6 +81,34 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
     }, 100);
   };
 
+  const formatSongTitle = (url) => {
+    if (!url) return "Unknown Song";
+
+    let filename = url.split("/").pop(); 
+
+    filename = decodeURIComponent(filename);
+
+    filename = filename.replace(/\.(mp3|m4a|opus|wav)$/i, "");
+
+    filename = filename.replace(/-[0-9]{6,}$/g, "");
+
+    filename = filename.replace(/_/g, " ");
+
+    filename = filename
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+
+    filename = filename.replace(/Ft\.|Ft|Feat\.?/gi, "(feat.");
+
+    if (filename.includes("(feat.") && !filename.includes(")")) {
+      filename += ")";
+    }
+
+    return filename;
+  };
+
+
   return (
     <div
       style={{
@@ -96,7 +122,7 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
     >
       <div style={{ marginBottom: "10px", fontWeight: "bold" }}>
         {songs.length > 0
-          ? decodeURIComponent(songs[currentIndex].split("/downloads/")[1])
+          ? formatSongTitle(songs[currentIndex])          
           : "No downloaded songs yet"}
       </div>
 
