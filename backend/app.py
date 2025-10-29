@@ -123,7 +123,6 @@ def search_youtube_for_audio(artist, title, max_results=10):
 
 #uses Youtube API
 def search_youtube_lyrics(artist, title, max_results=10):
-    print("in search youtube lyric fun")
     if not YT_API_KEY:
         return None
 
@@ -372,7 +371,6 @@ def delete_all_downloads():
 
 @app.route("/download_student_songs/<int:student_id>", methods=["GET"])
 def download_student_songs(student_id):
-    print(f"Starting downloads for student {student_id}")
 
     songs = (
         Song.query.join(Artist)

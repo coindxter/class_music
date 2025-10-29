@@ -81,32 +81,30 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
     }, 100);
   };
 
-  const formatSongTitle = (url) => {
-    if (!url) return "Unknown Song";
+const formatSongTitle = (url) => {
+  if (!url) return "Unknown Song";
 
-    let filename = url.split("/").pop(); 
+  let filename = decodeURIComponent(url.split("/").pop());
 
-    filename = decodeURIComponent(filename);
+  filename = filename.replace(/\.(mp3|m4a|opus|wav)$/i, "");
 
-    filename = filename.replace(/\.(mp3|m4a|opus|wav)$/i, "");
+  filename = filename.replace(/-[a-zA-Z0-9_-]{11}$/, "");
 
-    filename = filename.replace(/-[0-9]{6,}$/g, "");
+  filename = filename
+    .replace(/\(lyrics?\)/gi, "")
+    .replace(/\[.*?\]/g, "")
+    .replace(/\(audio\)/gi, "")
+    .replace(/\(official.*?\)/gi, "")
+    .trim();
 
-    filename = filename.replace(/_/g, " ");
+  filename = filename.replace(/_/g, " ");
+  filename = filename
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 
-    filename = filename
-      .split(" ")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-
-    filename = filename.replace(/Ft\.|Ft|Feat\.?/gi, "(feat.");
-
-    if (filename.includes("(feat.") && !filename.includes(")")) {
-      filename += ")";
-    }
-
-    return filename;
-  };
+  return filename;
+};
 
 
   return (
