@@ -9,6 +9,7 @@ import re
 import threading
 import requests
 from sqlalchemy.orm import scoped_session, sessionmaker
+from googleapiclient.discovery import build
 
 
 # -------------------- App / SocketIO / DB --------------------
@@ -29,6 +30,8 @@ DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
+YT_API_KEY = os.getenv("YT_API_KEY")
+youtube = build("youtube", "v3", developerKey=YT_API_KEY)
 
 db = SQLAlchemy(app)
 
@@ -76,27 +79,104 @@ def get_lastfm_top_tracks(artist_name, limit=5):
     tracks = res.get("toptracks", {}).get("track", [])
     return [t["name"] for t in tracks]
 
-def search_youtube(query, max_results=5):
+
+#uses yt-dlp search funciton
+def search_youtube_for_audio(artist, title, max_results=10):
+    BLOCK_WORDS = ["live", "remix", "sped", "speed", "nightcore", "slowed", "cover", "performance"]
+    TARGET_WORDS = ["lyrics", "audio", "hq", "full"]
+
+    query = f"{artist} {title} lyrics audio"
+
     ydl_opts = {
         "quiet": True,
-        "extract_flat": "in_playlist",
         "default_search": "ytsearch",
-        "noplaylist": True
+        "noplaylist": True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
-            entries = info.get("entries", [])
+            results = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
+            entries = results.get("entries", [])
 
+        scored = []
         for e in entries:
-            if "id" in e:
-                return f"https://www.youtube.com/watch?v={e['id']}"
-        return None
+            video_title = (e.get("title") or "").lower()
+            if any(word in video_title for word in BLOCK_WORDS):
+                continue
+
+            score = 0
+            if any(w in video_title for w in TARGET_WORDS):
+                score += 3
+            if "official" in video_title:
+                score -= 3
+
+            scored.append((score, e['id']))
+
+        if not scored:
+            return None
+
+        best_id = max(scored, key=lambda x: x[0])[1]
+        return f"https://www.youtube.com/watch?v={best_id}"
 
     except Exception as e:
-        print("YouTube search failed:", e)
         return None
+
+#uses Youtube API
+def search_youtube_lyrics(artist, title, max_results=10):
+    print("in search youtube lyric fun")
+    if not YT_API_KEY:
+        return None
+
+    query = f"{artist} {title} lyrics audio"
+
+    banned_keywords = [
+        "live", "cover", "remix", "sped", "slowed",
+        "performance", "instrumental", "karaoke",
+        "parody", "tribute", "reverb", "chipmunk"
+    ]
+
+    try:
+        response = youtube.search().list(
+            q=query,
+            part="snippet",
+            type="video",
+            maxResults=max_results,
+            videoEmbeddable="true"
+        ).execute()
+
+        items = response.get("items", [])
+        if not items:
+            return None
+
+        scored = []
+        for item in items:
+            video_id = item["id"]["videoId"]
+            title_text = item["snippet"]["title"].lower()
+            channel = item["snippet"]["channelTitle"].lower()
+
+            if any(bad in title_text for bad in banned_keywords):
+                continue
+
+            score = 0
+            if "lyric" in title_text:
+                score += 3
+            if "audio" in title_text:
+                score += 2
+            if "topic" in channel or "vevo" in channel:
+                score += 3
+
+            scored.append((score, video_id))
+
+        if scored:
+            best = max(scored, key=lambda x: x[0])[1]
+            return f"https://www.youtube.com/watch?v={best}"
+
+        return f"https://www.youtube.com/watch?v={items[0]['id']['videoId']}"
+
+    except Exception as e:
+        print("YouTube API failed:", e)
+        return None
+
 
 # -------------------- Routes --------------------
 
@@ -370,10 +450,8 @@ def download_student_songs(student_id):
         "failed": failed
     }), 200
 
-
 @app.route("/fetch_top_songs_all", methods=["GET"])
 def fetch_top_songs_all():
-
     try:
         artists = Artist.query.all()
         added_count = 0
@@ -395,16 +473,18 @@ def fetch_top_songs_all():
                     results[artist.name].append({"title": title, "status": "exists"})
                     continue
 
-                yt_query = f"{artist.name} {title} official music video"
-                yt_link = search_youtube(yt_query)
+                #primary search function using Youtube API    
+                yt_link = search_youtube_lyrics(artist.name, title)
 
                 if not yt_link:
-                    missing_youtube.append(f"{artist.name} - {title}")
+                    #Fall back if Youtube API doesn't work
+                    yt_link = search_youtube_for_audio(artist.name, title)
+
 
                 new_song = Song(
                     title=title,
                     link=yt_link,
-                    artist_id=artist.id
+                    artist_id=artist.id,
                 )
                 db.session.add(new_song)
                 added_count += 1
@@ -418,14 +498,13 @@ def fetch_top_songs_all():
         db.session.commit()
 
         return jsonify({
-            "message": f"Added {added_count} YouTube songs from Last.fm discovery",
+            "message": f"Added {added_count} YouTube lyric/audio songs",
             "youtube_missing": missing_youtube,
             "data": results
         }), 200
 
     except Exception as e:
         db.session.rollback()
-        print("Fetch error:", e)
         return jsonify({"error": str(e)}), 500
 
 
