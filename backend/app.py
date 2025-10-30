@@ -249,7 +249,27 @@ def get_classes_full():
 #def add_song_auto():
 
 
-# -----------------------------------------------
+@app.route("/songs_metadata/<int:student_id>", methods=["GET"])
+def songs_metadata(student_id):
+    songs = (
+        Song.query.join(Artist)
+        .filter(Artist.student_id == student_id)
+        .all()
+    )
+
+    output = []
+    for s in songs:
+        output.append({
+            "id": s.id,
+            "title": s.title,
+            "link": s.link,
+            "file_path": s.file_path,
+            "downloaded": bool(s.file_path),
+            "url": f"{API_BASE}/songs/{s.file_path}" if s.file_path else None
+        })
+
+    return jsonify(output), 200
+
 
 
 @app.route("/songs/<path:filename>")
@@ -260,7 +280,6 @@ def serve_song(filename):
         return jsonify({"error": "File not found"}), 404
 
 # ---------------- Delete ------------------------
-
 
 @app.route("/delete/class/<int:class_id>", methods=["DELETE"])
 def delete_class(class_id):
@@ -274,11 +293,17 @@ def delete_class(class_id):
                 if song.file_path:
                     file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
                     if os.path.exists(file_path):
-                        os.remove(file_path)
+                        try:
+                            os.remove(file_path)
+                        except Exception as e:
+                            print(f"Error deleting file {file_path}: {e}")
 
     db.session.delete(class_item)
     db.session.commit()
-    return jsonify({"message": f"Class {class_item.name} and all related files deleted successfully"}), 200
+
+    return jsonify({
+        "message": f"Class '{class_item.name}' and all related data/files deleted successfully."
+    }), 200
 
 @app.route("/delete/student/<int:student_id>", methods=["DELETE"])
 def delete_student(student_id):
@@ -291,11 +316,17 @@ def delete_student(student_id):
             if song.file_path:
                 file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
                 if os.path.exists(file_path):
-                    os.remove(file_path)
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        print(f"Error deleting file {file_path}: {e}")
 
     db.session.delete(student)
     db.session.commit()
-    return jsonify({"message": f"Student {student.name} and related files deleted successfully"}), 200
+
+    return jsonify({
+        "message": f"Student '{student.name}' and related files/data deleted successfully."
+    }), 200
 
 @app.route("/delete/artist/<int:artist_id>", methods=["DELETE"])
 def delete_artist(artist_id):
@@ -307,11 +338,17 @@ def delete_artist(artist_id):
         if song.file_path:
             file_path = os.path.join(DOWNLOAD_DIR, song.file_path)
             if os.path.exists(file_path):
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    print(f"Error deleting file {file_path}: {e}")
 
     db.session.delete(artist)
     db.session.commit()
-    return jsonify({"message": f"Artist {artist.name} and all related files deleted successfully"}), 200
+
+    return jsonify({
+        "message": f"Artist '{artist.name}' and their songs/files deleted successfully."
+    }), 200
 
 @app.route("/delete/song/<int:song_id>", methods=["DELETE"])
 def delete_song(song_id):
@@ -329,7 +366,10 @@ def delete_song(song_id):
 
     db.session.delete(song)
     db.session.commit()
-    return jsonify({"message": f"Song '{song.title}' and file deleted successfully"}), 200
+
+    return jsonify({
+        "message": f"Song '{song.title}' and its database entry deleted successfully."
+    }), 200
 
 @app.route("/delete/all", methods=["DELETE"])
 def delete_all():
@@ -337,7 +377,10 @@ def delete_all():
         for f in os.listdir(DOWNLOAD_DIR):
             path = os.path.join(DOWNLOAD_DIR, f)
             if os.path.isfile(path):
-                os.remove(path)
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    print(f"Error deleting {path}: {e}")
 
         Song.query.delete()
         Artist.query.delete()
@@ -345,7 +388,9 @@ def delete_all():
         ClassPeriod.query.delete()
         db.session.commit()
 
-        return jsonify({"message": "All data and files deleted successfully!"}), 200
+        return jsonify({
+            "message": "All data and downloaded files deleted successfully."
+        }), 200
 
     except Exception as e:
         db.session.rollback()
@@ -361,17 +406,24 @@ def delete_all_downloads():
                 os.remove(path)
                 deleted_files += 1
 
-        return jsonify({"message": f"All downloads cleared ({deleted_files} files deleted)."}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        for song in Song.query.all():
+            song.file_path = None
+        db.session.commit()
 
+        return jsonify({
+            "message": f"All downloaded files deleted ({deleted_files} total). Database entries cleared of file paths."
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 # ----------------- Button Functons -----------------
 
 @app.route("/download_student_songs/<int:student_id>", methods=["GET"])
 def download_student_songs(student_id):
-
+    delete_all_downloads()
     songs = (
         Song.query.join(Artist)
         .filter(Artist.student_id == student_id)
@@ -522,18 +574,6 @@ def list_songs():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/download_progress/<int:student_id>", methods=["GET"])
-def download_progress(student_id):
-    if not os.path.exists(DOWNLOAD_DIR):
-        return jsonify([])
-    downloaded_files = []
-    for file in os.listdir(DOWNLOAD_DIR):
-        if file.endswith(".mp3"):
-            downloaded_files.append({
-                "title": os.path.splitext(file)[0],
-                "path": f"/downloads/{file}"
-            })
-    return jsonify(downloaded_files), 200
 
 # -------------------- Main --------------------
 

@@ -8,6 +8,9 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const audioRef = useRef(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
 
   useEffect(() => {
     const loadSongs = async () => {
@@ -43,10 +46,21 @@ export default function MusicPlayer({ refreshTrigger, currentStudentName }) {
 
   const handleTimeUpdate = () => {
     const audio = audioRef.current;
-    if (audio && audio.duration > 0) {
+    if (!audio) return;
+    setCurrentTime(audio.currentTime);
+    if (audio.duration > 0) {
+      setDuration(audio.duration);
       setProgress((audio.currentTime / audio.duration) * 100);
     }
   };
+
+  const handleLoadedMetadata = () => {
+    const audio = audioRef.current;
+    if (audio && audio.duration > 0) {
+      setDuration(audio.duration);
+    }
+  };
+
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -106,6 +120,12 @@ const formatSongTitle = (url) => {
   return filename;
 };
 
+const formatTime = (seconds) => {
+  if (!seconds || isNaN(seconds)) return "0:00";
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
+};
 
   return (
     <div
@@ -144,6 +164,10 @@ const formatSongTitle = (url) => {
           }}
         />
       </div>
+      <div style={{ display: "flex", justifyContent: "space-between", color: "#bbb", fontSize: "12px", marginBottom: "10px" }}>
+        <span>{formatTime(currentTime)}</span>
+        <span>{formatTime(duration)}</span>
+      </div>
 
       {/* Controls */}
       <div style={{ display: "flex", justifyContent: "center", gap: "20px" }}>
@@ -175,6 +199,7 @@ const formatSongTitle = (url) => {
         ref={audioRef}
         src={songs[currentIndex] || ""}
         onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
         onEnded={nextSong}
         preload="auto"
       />
