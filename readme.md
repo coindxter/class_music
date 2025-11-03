@@ -5,6 +5,7 @@ cd class_music/backend
 python -m venv .venv
 
 .\.venv\Scripts\Activate       # Windows
+
 source venv/bin/activate     # Mac
 
 pip install -r requirements.txt
